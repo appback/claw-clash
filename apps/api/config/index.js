@@ -51,6 +51,12 @@ module.exports = {
   damageBoostDuration: 100,     // 20s at 200ms/tick
   speedBoostDuration: 75,       // 15s at 200ms/tick
 
+  // Chat pool (Pre-generation system)
+  chatCooldownTicks: 150,             // 30s at 200ms/tick
+  chatPoolMaxCategories: 10,
+  chatPoolMaxPerCategory: 5,
+  chatPoolMaxMessageLength: 50,
+
   // AI defaults
   defaultFleeThreshold: 15,
 

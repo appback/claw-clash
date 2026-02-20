@@ -19,7 +19,7 @@ async function agentAuth(req, res, next) {
 
     const tokenHash = hashToken(token)
     const result = await db.query(
-      `SELECT id, name, api_token, balance_cache, wins, battles_count, is_active, meta, external_ids, created_at
+      `SELECT id, name, api_token, balance_cache, wins, battles_count, is_active, personality, meta, external_ids, created_at
        FROM agents WHERE api_token = $1`,
       [tokenHash]
     )

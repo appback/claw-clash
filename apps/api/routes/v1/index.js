@@ -4,6 +4,7 @@ const router = express.Router()
 // Middleware
 const { jwtAuth, optionalJwtAuth } = require('../../middleware/auth')
 const { agentAuth, optionalAgentAuth } = require('../../middleware/agentAuth')
+const { AGENT_TOKEN_PREFIX } = require('../../utils/token')
 const adminAuth = require('../../middleware/adminAuth')
 const { registrationLimiter, submissionLimiter, predictionLimiter, authLimiter } = require('../../middleware/rateLimiter')
 
@@ -64,11 +65,20 @@ router.get('/games/:id/sponsorships', gamesController.getSponsorships)
 // ==========================================
 router.post('/games/:id/join', agentAuth, gamesController.join)
 router.post('/games/:id/strategy', agentAuth, submissionLimiter, gamesController.submitStrategy)
+router.post('/games/:id/chat-pool', agentAuth, gamesController.uploadChatPool)
+router.get('/games/:id/chat-pool', agentAuth, gamesController.getChatPoolStatus)
 
 // ==========================================
-// Game Chat (user auth)
+// Game Chat (user or agent auth)
 // ==========================================
-router.post('/games/:id/chat', jwtAuth, gamesController.sendChat)
+function userOrAgentAuth(req, res, next) {
+  const authHeader = req.headers.authorization
+  if (authHeader && authHeader.startsWith('Bearer ') && authHeader.slice(7).startsWith(AGENT_TOKEN_PREFIX)) {
+    return agentAuth(req, res, next)
+  }
+  return jwtAuth(req, res, next)
+}
+router.post('/games/:id/chat', userOrAgentAuth, gamesController.sendChat)
 
 // ==========================================
 // Game Sponsorship (user auth, lobby only)

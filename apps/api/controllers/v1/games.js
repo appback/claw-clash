@@ -264,22 +264,33 @@ async function getChat(req, res, next) {
   }
 }
 
+const VALID_EMOTIONS = new Set(['confident', 'friendly', 'intimidating', 'cautious', 'victorious', 'defeated'])
+
 /**
- * POST /api/v1/games/:id/chat - Send chat message (authenticated user)
+ * POST /api/v1/games/:id/chat - Send chat message (user JWT or agent token)
  */
 async function sendChat(req, res, next) {
   try {
     const { id } = req.params
-    const { message } = req.body
+    const { message, emotion } = req.body
+    const isAgent = !!req.agent
 
     if (!message || message.length > 200) {
       throw new ValidationError('Message required (max 200 characters)')
     }
 
-    // Verify game exists and is in an active state
+    if (emotion && !VALID_EMOTIONS.has(emotion)) {
+      throw new ValidationError(`Invalid emotion. Valid: ${[...VALID_EMOTIONS].join(', ')}`)
+    }
+
+    // Verify game exists and is in an allowed state
     const game = await db.query('SELECT state FROM games WHERE id = $1', [id])
     if (game.rows.length === 0) throw new NotFoundError('Game not found')
-    if (!['lobby', 'betting', 'battle'].includes(game.rows[0].state)) {
+
+    const allowedStates = isAgent
+      ? ['lobby', 'betting', 'battle', 'ended']
+      : ['lobby', 'betting', 'battle']
+    if (!allowedStates.includes(game.rows[0].state)) {
       throw new BadRequestError('Chat not available for this game state')
     }
 
@@ -287,14 +298,109 @@ async function sendChat(req, res, next) {
     const state = gameStateManager.getState(id)
     const tick = state ? state.tick : null
 
+    const msgType = isAgent ? 'ai_chat' : 'human_chat'
+    const senderId = isAgent ? req.agent.id : req.user.userId
+
     const result = await db.query(
-      `INSERT INTO game_chat (game_id, tick, msg_type, sender_id, message)
-       VALUES ($1, $2, 'human_chat', $3, $4)
-       RETURNING id, tick, msg_type, message, created_at`,
-      [id, tick, req.user.userId, message]
+      `INSERT INTO game_chat (game_id, tick, msg_type, sender_id, message, emotion)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, tick, msg_type, message, emotion, created_at`,
+      [id, tick, msgType, senderId, message, emotion || null]
     )
 
     res.status(201).json(result.rows[0])
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * POST /api/v1/games/:id/chat-pool - Upload pre-generated chat responses (agent)
+ */
+async function uploadChatPool(req, res, next) {
+  try {
+    const { id } = req.params
+    const agent = req.agent
+    const { responses } = req.body
+
+    // Validate game exists and is in lobby/betting
+    const game = await db.query('SELECT state FROM games WHERE id = $1', [id])
+    if (game.rows.length === 0) throw new NotFoundError('Game not found')
+    if (!['lobby', 'betting'].includes(game.rows[0].state)) {
+      throw new BadRequestError('Chat pool upload only during lobby or betting')
+    }
+
+    // Verify agent is in this game
+    const entry = await db.query(
+      'SELECT id FROM game_entries WHERE game_id = $1 AND agent_id = $2',
+      [id, agent.id]
+    )
+    if (entry.rows.length === 0) {
+      throw new BadRequestError('Agent is not a participant in this game')
+    }
+
+    // Validate responses structure
+    if (!responses || typeof responses !== 'object' || Array.isArray(responses)) {
+      throw new ValidationError('responses object required')
+    }
+
+    const categories = Object.keys(responses)
+    if (categories.length > config.chatPoolMaxCategories) {
+      throw new ValidationError(`Max ${config.chatPoolMaxCategories} categories`)
+    }
+
+    let totalMessages = 0
+    for (const [cat, msgs] of Object.entries(responses)) {
+      if (!Array.isArray(msgs)) {
+        throw new ValidationError(`Category "${cat}" must be an array`)
+      }
+      if (msgs.length > config.chatPoolMaxPerCategory) {
+        throw new ValidationError(`Max ${config.chatPoolMaxPerCategory} messages per category`)
+      }
+      for (const msg of msgs) {
+        if (typeof msg !== 'string' || msg.length === 0 || msg.length > config.chatPoolMaxMessageLength) {
+          throw new ValidationError(`Each message must be 1-${config.chatPoolMaxMessageLength} characters`)
+        }
+      }
+      totalMessages += msgs.length
+    }
+
+    // Upsert (allow re-upload during lobby/betting)
+    await db.query(
+      `INSERT INTO agent_chat_pool (game_id, agent_id, responses)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (game_id, agent_id) DO UPDATE SET responses = $3, created_at = now()`,
+      [id, agent.id, JSON.stringify(responses)]
+    )
+
+    res.status(201).json({ success: true, categories: categories.length, total_messages: totalMessages })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * GET /api/v1/games/:id/chat-pool - Check if agent has uploaded a chat pool
+ */
+async function getChatPoolStatus(req, res, next) {
+  try {
+    const { id } = req.params
+    const agent = req.agent
+
+    const result = await db.query(
+      'SELECT responses FROM agent_chat_pool WHERE game_id = $1 AND agent_id = $2',
+      [id, agent.id]
+    )
+
+    if (result.rows.length === 0) {
+      return res.json({ has_pool: false, categories: 0, total_messages: 0 })
+    }
+
+    const responses = result.rows[0].responses
+    const categories = Object.keys(responses).length
+    const totalMessages = Object.values(responses).reduce((sum, msgs) => sum + msgs.length, 0)
+
+    res.json({ has_pool: true, categories, total_messages: totalMessages })
   } catch (err) {
     next(err)
   }
@@ -806,6 +912,7 @@ async function createWeapon(req, res, next) {
 module.exports = {
   list, get, getState, replay, getChat, sendChat,
   join, submitStrategy,
+  uploadChatPool, getChatPoolStatus,
   sponsor, getSponsorships,
   create, update,
   listArenas, listWeapons, createArena, createWeapon

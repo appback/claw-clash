@@ -1,6 +1,7 @@
 const db = require('../db')
 const config = require('../config')
 const gameStateManager = require('./gameStateManager')
+const chatPoolService = require('./chatPoolService')
 
 /**
  * Battle Engine v2.5 — Turn-Based Sub-Tick System
@@ -59,10 +60,13 @@ function startBattle(game, arena, entries) {
       survivedTicks: 0,
       alive: true,
       action: null,
+      personality: entry.personality || 'friendly',
       strategy: entry.initial_strategy || { mode: 'balanced', target_priority: 'nearest', flee_threshold: config.defaultFleeThreshold },
       strategyCooldown: 0,
       strategyChanges: 0,
       consecutiveHits: 0,
+      consecutiveFleeTicks: 0,
+      nearDeathTriggered: false,
       buffs: []
     }
   })
@@ -198,6 +202,9 @@ function processTick(gameId) {
       events.push({ type: 'elimination', slot: agent.slot, tick })
     }
   }
+
+  // Fire-and-forget chat triggers from pre-generated pool
+  triggerChatEvents(gameId, game, tick, events)
 
   // Record tick state
   const tickState = {
@@ -374,16 +381,54 @@ function applyPowerup(agent, powerup, events) {
 }
 
 // =========================================
-// Action Decision (Rule Engine v2.5)
+// Action Decision (Rule Engine v3.0 — Personality-Aware)
 // =========================================
+
+/**
+ * Personality modifiers:
+ *   aggressive — flee_threshold ×0 (never flee), always chase
+ *   confident  — flee_threshold ×0.5, balanced flee at HP < 15%
+ *   friendly   — no modifier (default), uses strategy as-is
+ *   cautious   — flee_threshold ×1.5, balanced flee at HP < 50%
+ *   troll      — 20% random action, flee_threshold fluctuates
+ */
+function getPersonalityModifiers(personality) {
+  switch (personality) {
+    case 'aggressive': return { fleeMultiplier: 0, balancedFleeHpPct: 0, randomChance: 0 }
+    case 'confident':  return { fleeMultiplier: 0.5, balancedFleeHpPct: 0.15, randomChance: 0 }
+    case 'cautious':   return { fleeMultiplier: 1.5, balancedFleeHpPct: 0.5, randomChance: 0 }
+    case 'troll':      return { fleeMultiplier: Math.random() * 2, balancedFleeHpPct: 0.3, randomChance: 0.2 }
+    case 'friendly':
+    default:           return { fleeMultiplier: 1.0, balancedFleeHpPct: 0.3, randomChance: 0 }
+  }
+}
 
 function decideAction(agent, game, shrinkPhase) {
   const strategy = agent.strategy
+  const personality = getPersonalityModifiers(agent.personality)
   const enemies = game.agents
     .filter(a => a.alive && a.slot !== agent.slot)
     .sort((a, b) => manhattanDist(agent, a) - manhattanDist(agent, b))
 
   if (enemies.length === 0) return { type: 'stay' }
+
+  // Troll: random action chance
+  if (personality.randomChance > 0 && Math.random() < personality.randomChance) {
+    const actions = ['attack', 'move', 'stay']
+    const pick = actions[Math.floor(Math.random() * actions.length)]
+    if (pick === 'attack' && enemies.length > 0) {
+      const rTarget = enemies[Math.floor(Math.random() * enemies.length)]
+      const d = manhattanDist(agent, rTarget)
+      if (d <= agent.weapon.range && agent.cooldown === 0) {
+        return { type: 'attack', targetSlot: rTarget.slot }
+      }
+    }
+    if (pick === 'move') {
+      const dirs = ['up', 'down', 'left', 'right']
+      return { type: 'move', direction: dirs[Math.floor(Math.random() * dirs.length)] }
+    }
+    // fall through to normal logic if random action didn't work
+  }
 
   // Priority 1: Escape danger zone
   if (isInDangerZone(agent.x, agent.y, shrinkPhase, game.arena.grid_width, game.arena.grid_height)) {
@@ -414,9 +459,14 @@ function decideAction(agent, game, shrinkPhase) {
     }
   }
 
-  // Priority 3: Flee threshold (low HP emergency)
-  const fleeThreshold = strategy.flee_threshold != null ? strategy.flee_threshold : config.defaultFleeThreshold
-  if (fleeThreshold && agent.hp <= fleeThreshold) {
+  // Anti-deadlock: if fleeing too long (>50 consecutive ticks = 10s), force engagement
+  const forceEngage = agent.consecutiveFleeTicks >= 50
+
+  // Priority 3: Flee threshold (personality-adjusted)
+  const baseFleeThreshold = strategy.flee_threshold != null ? strategy.flee_threshold : config.defaultFleeThreshold
+  const fleeThreshold = Math.floor(baseFleeThreshold * personality.fleeMultiplier)
+
+  if (!forceEngage && fleeThreshold > 0 && agent.hp <= fleeThreshold) {
     const nearest = enemies[0]
 
     // Try to flee, but if cornered → fight back
@@ -424,9 +474,11 @@ function decideAction(agent, game, shrinkPhase) {
     if (fleeAction.type === 'stay') {
       const dist = manhattanDist(agent, nearest)
       if (dist <= agent.weapon.range && agent.cooldown === 0) {
+        agent.consecutiveFleeTicks = 0
         return { type: 'attack', targetSlot: nearest.slot }
       }
     }
+    agent.consecutiveFleeTicks++
     return fleeAction
   }
 
@@ -437,27 +489,34 @@ function decideAction(agent, game, shrinkPhase) {
   // Attack if in range and not on cooldown
   const dist = manhattanDist(agent, target)
   if (dist <= agent.weapon.range && agent.cooldown === 0) {
+    agent.consecutiveFleeTicks = 0
     return { type: 'attack', targetSlot: target.slot }
   }
 
-  // Movement based on mode
-  switch (strategy.mode) {
+  // Movement based on mode (personality affects balanced flee threshold)
+  const effectiveMode = agent.personality === 'aggressive' ? 'aggressive' : strategy.mode
+
+  switch (effectiveMode) {
     case 'aggressive':
+      agent.consecutiveFleeTicks = 0
       return moveToward(agent, target, game.arena)
     case 'defensive':
       return { type: 'stay' }
     case 'balanced':
     default:
-      if (agent.hp > agent.maxHp * 0.3) {
+      if (forceEngage || agent.hp > agent.maxHp * personality.balancedFleeHpPct) {
+        agent.consecutiveFleeTicks = 0
         return moveToward(agent, target, game.arena)
       } else {
         const fleeAction = moveAwayFrom(agent, enemies[0], game.arena)
         if (fleeAction.type === 'stay') {
           const d = manhattanDist(agent, enemies[0])
           if (d <= agent.weapon.range && agent.cooldown === 0) {
+            agent.consecutiveFleeTicks = 0
             return { type: 'attack', targetSlot: enemies[0].slot }
           }
         }
+        agent.consecutiveFleeTicks++
         return fleeAction
       }
   }
@@ -741,6 +800,14 @@ async function finalizeBattle(gameId, finalTick, reason) {
     alive: agent.alive
   }))
 
+  // Victory chat for winner
+  if (ranked[0] && ranked[0].alive) {
+    fireChat(gameId, ranked[0].agentId, 'victory', finalTick, ranked[0].slot)
+  }
+
+  // Clean up chat pool cache
+  chatPoolService.clearGameCache(gameId)
+
   await gameStateManager.endGame(gameId)
 
   const durationSec = Math.round(finalTick * config.tickIntervalMs / 1000)
@@ -799,6 +866,53 @@ async function finalizeBattle(gameId, finalTick, reason) {
       await onBattleEndCallback(gameId, results, reason)
     } catch (err) {
       console.error(`[BattleEngine] onBattleEnd callback error:`, err)
+    }
+  }
+}
+
+// =========================================
+// Chat Pool Integration (Fire-and-Forget)
+// =========================================
+
+function fireChat(gameId, agentId, category, tick, slot) {
+  chatPoolService.triggerChat(gameId, agentId, category, tick, slot).catch(() => {})
+}
+
+function triggerChatEvents(gameId, game, tick, events) {
+  // Battle start (tick 1 only)
+  if (tick === 1) {
+    for (const agent of game.agents) {
+      if (agent.alive) fireChat(gameId, agent.agentId, 'battle_start', tick, agent.slot)
+    }
+  }
+
+  // Event-driven triggers
+  for (const evt of events) {
+    if (evt.type === 'damage') {
+      const target = game.agents.find(a => a.slot === evt.to_slot)
+      if (target) {
+        const hpPct = target.maxHp > 0 ? target.hp / target.maxHp : 0
+        const cat = hpPct > 0.7 ? 'damage_high' : hpPct > 0.3 ? 'damage_mid' : 'damage_low'
+        fireChat(gameId, target.agentId, cat, tick, target.slot)
+      }
+    }
+    if (evt.type === 'kill') {
+      const killer = game.agents.find(a => a.slot === evt.killer_slot)
+      const victim = game.agents.find(a => a.slot === evt.victim_slot)
+      if (killer) fireChat(gameId, killer.agentId, 'kill', tick, killer.slot)
+      if (victim) fireChat(gameId, victim.agentId, 'death', tick, victim.slot)
+    }
+    if (evt.type === 'first_blood') {
+      const killer = game.agents.find(a => a.slot === evt.killer_slot)
+      if (killer) fireChat(gameId, killer.agentId, 'first_blood', tick, killer.slot)
+    }
+  }
+
+  // Near-death (once per agent per game, HP < 15 but still alive)
+  for (const agent of game.agents) {
+    if (agent.alive && agent.hp > 0 && agent.hp < 15 && !agent.nearDeathTriggered) {
+      agent.nearDeathTriggered = true
+      fireChat(gameId, agent.agentId, 'near_death', tick, agent.slot)
     }
   }
 }
@@ -993,6 +1107,7 @@ function getAgentView(gameId, agentId) {
       max_hp: me.maxHp,
       x: me.x,
       y: me.y,
+      personality: me.personality,
       weapon: me.weapon.slug,
       weapon_speed: me.weapon.speed,
       cooldown: me.cooldown,
@@ -1010,6 +1125,7 @@ function getAgentView(gameId, agentId) {
         hp: a.hp,
         x: a.x,
         y: a.y,
+        personality: a.personality,
         weapon: a.weapon.slug,
         weapon_speed: a.weapon.speed,
         cooldown: a.cooldown,

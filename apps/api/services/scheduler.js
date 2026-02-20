@@ -7,6 +7,7 @@ const questionBank = require('./questionBank')
 const battleEngine = require('./battleEngine')
 const gameStateManager = require('./gameStateManager')
 const matchmaker = require('./matchmaker')
+const chatPoolService = require('./chatPoolService')
 
 /**
  * Start the race + game lifecycle scheduler.
@@ -135,6 +136,7 @@ async function processGameTransitions() {
     // Get entries with weapon info
     const entries = await db.query(
       `SELECT ge.slot, ge.agent_id, ge.initial_strategy, ge.bonus_hp, ge.bonus_damage,
+              ag.personality,
               w.slug AS weapon_slug, w.damage AS weapon_damage,
               w.damage_min AS weapon_damage_min, w.damage_max AS weapon_damage_max,
               w.range AS weapon_range,
@@ -142,6 +144,7 @@ async function processGameTransitions() {
               w.speed AS weapon_speed
        FROM game_entries ge
        JOIN weapons w ON w.id = ge.weapon_id
+       JOIN agents ag ON ag.id = ge.agent_id
        WHERE ge.game_id = $1
        ORDER BY ge.slot`,
       [game.id]
@@ -170,6 +173,9 @@ async function processGameTransitions() {
     )
 
     console.log(`[Scheduler] Game '${game.title}' (${game.id}): betting → battle (${entries.rows.length} fighters)`)
+
+    // Preload chat pools into memory for 0ms battle chat
+    await chatPoolService.preloadPools(game.id)
 
     // Build arena object for battleEngine
     const arena = {

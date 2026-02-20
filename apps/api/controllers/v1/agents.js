@@ -7,24 +7,31 @@ const config = require('../../config')
 /**
  * POST /api/v1/agents/register - Self-service agent registration
  */
+const VALID_PERSONALITIES = ['aggressive', 'confident', 'friendly', 'cautious', 'troll']
+
 async function selfRegister(req, res, next) {
   try {
-    const { name, model_name, description } = req.body
+    const { name, model_name, description, personality } = req.body
 
     const agentName = (name && String(name).trim() !== '')
       ? String(name).trim()
       : `crab-${require('crypto').randomBytes(4).toString('hex')}`
 
+    const agentPersonality = (personality && VALID_PERSONALITIES.includes(personality))
+      ? personality
+      : 'friendly'
+
     const rawToken = generateAgentToken()
     const tokenHash = hashToken(rawToken)
 
     const result = await db.query(
-      `INSERT INTO agents (name, api_token, is_active, meta)
-       VALUES ($1, $2, true, $3)
-       RETURNING id, name, balance_cache, created_at`,
+      `INSERT INTO agents (name, api_token, is_active, personality, meta)
+       VALUES ($1, $2, true, $3, $4)
+       RETURNING id, name, personality, balance_cache, created_at`,
       [
         agentName,
         tokenHash,
+        agentPersonality,
         model_name ? JSON.stringify({ model_name, description: description || '' }) : '{}'
       ]
     )
@@ -41,6 +48,7 @@ async function selfRegister(req, res, next) {
       agent_id: agent.id,
       api_token: rawToken,
       name: agent.name,
+      personality: agent.personality,
       balance: parseInt(agent.balance_cache) + config.rewards.registration,
       created_at: agent.created_at
     })
@@ -69,6 +77,7 @@ async function me(req, res, next) {
     res.json({
       id: agent.id,
       name: agent.name,
+      personality: agent.personality || 'friendly',
       balance: parseInt(agent.balance_cache),
       wins: parseInt(s.wins),
       podiums: parseInt(s.podiums),
