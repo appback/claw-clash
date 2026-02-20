@@ -72,15 +72,8 @@ function startScheduler(socketIO) {
     }
   })
 
-  // Auto-create games every N hours
-  console.log(`[Scheduler] Auto-game creation every ${config.autoGameIntervalHours} hours`)
-  cron.schedule(`30 */${config.autoGameIntervalHours} * * *`, async () => {
-    try {
-      await autoCreateGame()
-    } catch (err) {
-      console.error('[Scheduler] Error in auto-game creation:', err)
-    }
-  })
+  // Games are created ONLY by matchmaker when enough agents are in queue.
+  // No auto-create — removed to prevent empty scheduled games.
 
   // Register battle-end callback
   battleEngine.onBattleEnd(handleBattleEnd)
@@ -276,38 +269,6 @@ async function refundGameEntries(gameId) {
       [entry.entry_fee_paid, entry.agent_id]
     )
   }
-}
-
-/**
- * Auto-create a game (admin-style, for scheduled automatic games).
- */
-async function autoCreateGame() {
-  const arena = await db.query(
-    "SELECT * FROM arenas WHERE is_active = true ORDER BY slug = 'the_pit' DESC LIMIT 1"
-  )
-  if (arena.rows.length === 0) {
-    console.log('[Scheduler] No active arena, skipping auto-game')
-    return
-  }
-  const arenaRow = arena.rows[0]
-
-  const now = Date.now()
-  const lobbyStart = new Date(now + 2 * 60000).toISOString()
-  const bettingStart = new Date(now + 2 * 60000 + config.lobbyDurationMin * 60000).toISOString()
-  const battleStart = new Date(now + 2 * 60000 + config.lobbyDurationMin * 60000 + config.bettingDurationSec * 1000).toISOString()
-
-  const title = `Arena Battle #${Date.now().toString(36).toUpperCase()}`
-
-  const result = await db.query(
-    `INSERT INTO games (title, arena_id, state, max_entries, entry_fee, max_ticks,
-                        lobby_start, betting_start, battle_start, source)
-     VALUES ($1, $2, 'created', $3, 0, $4, $5, $6, $7, 'admin')
-     RETURNING id, title`,
-    [title, arenaRow.id, arenaRow.max_players, config.defaultMaxTicks,
-     lobbyStart, bettingStart, battleStart]
-  )
-
-  console.log(`[Scheduler] Auto-created game '${result.rows[0].title}' (${result.rows[0].id})`)
 }
 
 // ==========================================
@@ -552,11 +513,14 @@ async function autoCreateRace() {
 }
 
 /**
- * Recover games stuck in 'battle' state with no in-memory state (e.g. after API restart).
+ * Clean up games from previous server lifecycle on restart.
+ * - battle state with no in-memory state → ended
+ * - lobby/betting/created → cancelled (no live server to process them)
  */
 async function recoverStuckBattles() {
-  const result = await db.query("SELECT id, title FROM games WHERE state = 'battle'")
-  for (const row of result.rows) {
+  // 1. Battle games with no in-memory state → ended
+  const battles = await db.query("SELECT id, title FROM games WHERE state = 'battle'")
+  for (const row of battles.rows) {
     if (!gameStateManager.getState(row.id)) {
       await db.query("UPDATE games SET state = 'ended', updated_at = now() WHERE id = $1", [row.id])
       await db.query(
@@ -566,8 +530,26 @@ async function recoverStuckBattles() {
       console.log(`[Scheduler] Recovered stuck battle: ${row.title} (${row.id})`)
     }
   }
-  if (result.rows.length > 0) {
-    console.log(`[Scheduler] Checked ${result.rows.length} battle-state games for stuck recovery`)
+
+  // 2. Lobby/betting/created games → cancelled (server restarted, these can't proceed)
+  const stale = await db.query(
+    "SELECT id, title, state FROM games WHERE state IN ('created', 'lobby', 'betting')"
+  )
+  for (const row of stale.rows) {
+    await db.query("UPDATE games SET state = 'cancelled', updated_at = now() WHERE id = $1", [row.id])
+    await refundGameEntries(row.id)
+    console.log(`[Scheduler] Cancelled stale ${row.state} game on restart: ${row.title} (${row.id})`)
+  }
+
+  // 3. Clear battle queue (stale entries from previous lifecycle)
+  const cleared = await db.query('DELETE FROM battle_queue RETURNING id')
+  if (cleared.rows.length > 0) {
+    console.log(`[Scheduler] Cleared ${cleared.rows.length} stale queue entries on restart`)
+  }
+
+  const total = battles.rows.length + stale.rows.length
+  if (total > 0) {
+    console.log(`[Scheduler] Startup cleanup: ${battles.rows.length} battles, ${stale.rows.length} lobby/betting/created games processed`)
   }
 }
 
