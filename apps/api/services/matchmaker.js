@@ -15,6 +15,7 @@ async function processQueue() {
   // Get eligible agents (not in cooldown)
   const queue = await db.query(
     `SELECT bq.id, bq.agent_id, bq.weapon_slug, bq.queued_at,
+            bq.chat_pool, bq.strategy,
             a.name AS agent_name, a.meta
      FROM battle_queue bq
      JOIN agents a ON a.id = bq.agent_id
@@ -213,12 +214,24 @@ async function createQueueGame(agents) {
       }
 
       const defaultStrategy = { mode: 'balanced', target_priority: 'nearest', flee_threshold: config.defaultFleeThreshold }
+      const strategy = agent.strategy || defaultStrategy
 
       await client.query(
         `INSERT INTO game_entries (game_id, agent_id, slot, weapon_id, initial_strategy)
          VALUES ($1, $2, $3, $4, $5)`,
-        [gameId, agent.agent_id, slot, weaponId, JSON.stringify(defaultStrategy)]
+        [gameId, agent.agent_id, slot, weaponId, JSON.stringify(strategy)]
       )
+
+      // Transfer chat_pool from queue to agent_chat_pool
+      if (agent.chat_pool) {
+        const pool = typeof agent.chat_pool === 'string' ? JSON.parse(agent.chat_pool) : agent.chat_pool
+        await client.query(
+          `INSERT INTO agent_chat_pool (game_id, agent_id, responses)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (game_id, agent_id) DO UPDATE SET responses = $3`,
+          [gameId, agent.agent_id, JSON.stringify(pool)]
+        )
+      }
 
       // Record matchmaking history
       await client.query(

@@ -8,7 +8,7 @@ const config = require('../../config')
 async function join(req, res, next) {
   try {
     const agent = req.agent
-    const { weapon } = req.body
+    const { weapon, chat_pool, strategy } = req.body
 
     // Validate weapon (optional — null means random assignment by matchmaker)
     const weaponSlug = weapon || null
@@ -20,6 +20,47 @@ async function join(req, res, next) {
       if (weaponResult.rows.length === 0) {
         throw new NotFoundError(`Weapon '${weaponSlug}' not found`)
       }
+    }
+
+    // Validate chat_pool (optional)
+    let validatedPool = null
+    if (chat_pool && typeof chat_pool === 'object') {
+      const categories = Object.keys(chat_pool)
+      if (categories.length > 10) {
+        throw new ValidationError('chat_pool: max 10 categories')
+      }
+      for (const cat of categories) {
+        if (!Array.isArray(chat_pool[cat])) {
+          throw new ValidationError(`chat_pool.${cat} must be an array`)
+        }
+        if (chat_pool[cat].length > 5) {
+          throw new ValidationError(`chat_pool.${cat}: max 5 messages per category`)
+        }
+        for (const msg of chat_pool[cat]) {
+          if (typeof msg !== 'string' || msg.length === 0 || msg.length > 50) {
+            throw new ValidationError(`chat_pool.${cat}: each message must be 1-50 chars`)
+          }
+        }
+      }
+      validatedPool = chat_pool
+    }
+
+    // Validate strategy (optional)
+    let validatedStrategy = null
+    if (strategy && typeof strategy === 'object') {
+      const { mode, target_priority, flee_threshold } = strategy
+      const validModes = ['aggressive', 'defensive', 'balanced']
+      const validTargets = ['nearest', 'lowest_hp', 'highest_hp', 'random']
+      if (mode && !validModes.includes(mode)) {
+        throw new ValidationError(`strategy.mode must be one of: ${validModes.join(', ')}`)
+      }
+      if (target_priority && !validTargets.includes(target_priority)) {
+        throw new ValidationError(`strategy.target_priority must be one of: ${validTargets.join(', ')}`)
+      }
+      if (flee_threshold != null && (typeof flee_threshold !== 'number' || flee_threshold < 0 || flee_threshold > 100)) {
+        throw new ValidationError('strategy.flee_threshold must be 0-100')
+      }
+      validatedStrategy = { mode: mode || 'balanced', target_priority: target_priority || 'nearest', flee_threshold: flee_threshold ?? config.defaultFleeThreshold }
     }
 
     // Check if agent is already in an active game
@@ -54,10 +95,10 @@ async function join(req, res, next) {
 
     // Insert into queue
     const result = await db.query(
-      `INSERT INTO battle_queue (agent_id, weapon_slug)
-       VALUES ($1, $2)
+      `INSERT INTO battle_queue (agent_id, weapon_slug, chat_pool, strategy)
+       VALUES ($1, $2, $3, $4)
        RETURNING id, weapon_slug, queued_at`,
-      [agent.id, weaponSlug]
+      [agent.id, weaponSlug, validatedPool ? JSON.stringify(validatedPool) : null, validatedStrategy ? JSON.stringify(validatedStrategy) : null]
     )
 
     res.status(201).json({

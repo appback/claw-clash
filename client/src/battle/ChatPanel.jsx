@@ -38,10 +38,14 @@ export default function ChatPanel({ gameId, gameState }) {
     return () => clearInterval(interval)
   }, [gameId, isActive])
 
-  // Auto scroll
+  // Auto scroll only when user is already near bottom
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    const el = scrollRef.current
+    if (el) {
+      const isNearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 50
+      if (isNearBottom) {
+        el.scrollTop = el.scrollHeight
+      }
     }
   }, [messages])
 

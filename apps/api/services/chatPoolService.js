@@ -8,6 +8,18 @@ const config = require('../config')
  * During battle, the engine calls triggerChat() to pick one and insert into game_chat.
  */
 
+const DEFAULT_POOL = {
+  battle_start: ["Let's fight!", "Ready for battle!", "Here we go!"],
+  kill: ["Got one!", "Down you go!", "Too easy!"],
+  death: ["I'll be back...", "Good fight!", "Next time..."],
+  first_blood: ["First blood!", "Opening kill!", "That's mine!"],
+  near_death: ["Not yet!", "Still standing!", "Come on..."],
+  victory: ["Victory!", "I win!", "Champion!"],
+  damage_high: ["Is that all?", "Barely felt it!", "Try harder!"],
+  damage_mid: ["Nice hit!", "Ouch!", "Not bad!"],
+  damage_low: ["I'm in trouble!", "Help!", "This hurts!"]
+}
+
 // In-memory cooldown tracking: `${gameId}:${agentId}` → lastChatTick
 const chatCooldowns = new Map()
 
@@ -66,7 +78,15 @@ async function getPoolResponses(gameId, agentId) {
     [gameId, agentId]
   )
 
-  if (!result.rows[0]) return null
+  if (!result.rows[0]) {
+    // No pool in DB — use default fallback
+    if (!gameCache) {
+      gameCache = new Map()
+      poolCache.set(gameId, gameCache)
+    }
+    gameCache.set(agentId, DEFAULT_POOL)
+    return DEFAULT_POOL
+  }
 
   // Cache it
   if (!gameCache) {

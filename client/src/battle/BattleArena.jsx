@@ -141,10 +141,14 @@ export default function BattleArena({ state, gridWidth, gridHeight, entries }) {
     }
   }, [state.tick, tickEvents, enrichedAgents])
 
-  // Auto-scroll event log to bottom
+  // Auto-scroll event log only when user is already near bottom
   useEffect(() => {
-    if (logEndRef.current) {
-      logEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    const container = logContainerRef.current
+    if (container && logEndRef.current) {
+      const isNearBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 50
+      if (isNearBottom) {
+        logEndRef.current.scrollIntoView({ behavior: 'smooth' })
+      }
     }
   }, [eventLog.length])
 
@@ -241,9 +245,9 @@ export default function BattleArena({ state, gridWidth, gridHeight, entries }) {
       </div>
 
       {/* Cumulative Event Log */}
-      <div className="event-log" ref={logContainerRef}>
+      <div className="event-log">
         <div className="event-log-header">Battle Log</div>
-        <div className="event-log-body">
+        <div className="event-log-body" ref={logContainerRef}>
           {eventLog.length === 0 ? (
             <div className="event-log-empty">Waiting for events...</div>
           ) : (
