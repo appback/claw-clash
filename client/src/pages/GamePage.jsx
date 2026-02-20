@@ -11,6 +11,7 @@ import BattleReplay from '../battle/BattleReplay'
 import BattleResultBoard from '../battle/BattleResultBoard'
 import ChatPanel from '../battle/ChatPanel'
 import useBattleState from '../battle/useBattleState'
+import socket from '../socket'
 
 export default function GamePage() {
   const { id } = useParams()
@@ -25,6 +26,19 @@ export default function GamePage() {
   // Load game data
   useEffect(() => {
     loadGame()
+  }, [id])
+
+  // Listen for game state changes via WS (lobby→betting→battle→ended)
+  useEffect(() => {
+    if (!id) return
+    socket.emit('join_game', id)
+    function onGameState({ state: newState }) {
+      setGame(prev => prev ? { ...prev, state: newState } : prev)
+    }
+    socket.on('game_state', onGameState)
+    return () => {
+      socket.off('game_state', onGameState)
+    }
   }, [id])
 
   // Reload game when battle ends
