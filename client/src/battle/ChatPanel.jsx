@@ -1,42 +1,43 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { publicApi, userApi } from '../api'
+import socket from '../socket'
 
 export default function ChatPanel({ gameId, gameState }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const scrollRef = useRef(null)
-  const lastTickRef = useRef(-1)
+  const seenIdsRef = useRef(new Set())
 
   const isActive = ['lobby', 'betting', 'battle'].includes(gameState)
   const isLoggedIn = !!localStorage.getItem('user_token')
 
-  // Poll for messages
+  // Initial load via HTTP
   useEffect(() => {
     if (!gameId) return
 
-    function poll() {
-      const params = lastTickRef.current >= 0 ? { after: lastTickRef.current } : {}
-      publicApi.get('/games/' + gameId + '/chat', params)
-        .then(res => {
-          const msgs = res.data.messages || []
-          if (msgs.length > 0) {
-            setMessages(prev => {
-              const existing = new Set(prev.map(m => m.id))
-              const newMsgs = msgs.filter(m => !existing.has(m.id))
-              return [...prev, ...newMsgs].slice(-200) // keep last 200
-            })
-            const maxTick = Math.max(...msgs.map(m => m.tick || 0))
-            if (maxTick > lastTickRef.current) lastTickRef.current = maxTick
-          }
-        })
-        .catch(() => {})
+    publicApi.get('/games/' + gameId + '/chat')
+      .then(res => {
+        const msgs = res.data.messages || []
+        setMessages(msgs.slice(-200))
+        seenIdsRef.current = new Set(msgs.map(m => m.id))
+      })
+      .catch(() => {})
+  }, [gameId])
+
+  // WebSocket real-time chat
+  useEffect(() => {
+    if (!gameId) return
+
+    function onChat(msg) {
+      if (seenIdsRef.current.has(msg.id)) return
+      seenIdsRef.current.add(msg.id)
+      setMessages(prev => [...prev, msg].slice(-200))
     }
 
-    poll()
-    const interval = setInterval(poll, isActive ? 2000 : 10000)
-    return () => clearInterval(interval)
-  }, [gameId, isActive])
+    socket.on('chat', onChat)
+    return () => socket.off('chat', onChat)
+  }, [gameId])
 
   // Auto scroll only when user is already near bottom
   useEffect(() => {
@@ -55,8 +56,8 @@ export default function ChatPanel({ gameId, gameState }) {
 
     setSending(true)
     try {
-      const res = await userApi.post('/games/' + gameId + '/chat', { message: input.trim() })
-      setMessages(prev => [...prev, res.data])
+      await userApi.post('/games/' + gameId + '/chat', { message: input.trim() })
+      // Message will arrive via WebSocket broadcast
       setInput('')
     } catch {
       // silently fail

@@ -20,7 +20,7 @@ export default function GamePage() {
   const [loading, setLoading] = useState(true)
 
   const isBattle = game?.state === 'battle'
-  const { state: liveState, error: liveError } = useBattleState(id, isBattle)
+  const { state: liveState, error: liveError, viewers } = useBattleState(id, isBattle)
 
   // Load game data
   useEffect(() => {
@@ -84,6 +84,9 @@ export default function GamePage() {
         <p className="page-subtitle">
           Arena: {game.arena_name} &middot; {game.entry_count || 0}/{game.max_entries} fighters
           &middot; {Math.floor((game.max_ticks || 1500) / 5 / 60)} min battle
+          {isBattle && viewers > 0 && (
+            <span> &middot; {viewers} watching</span>
+          )}
         </p>
       </div>
 

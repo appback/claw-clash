@@ -308,6 +308,10 @@ async function sendChat(req, res, next) {
       [id, tick, msgType, senderId, message, emotion || null]
     )
 
+    // Push chat via WebSocket
+    const io = req.app.get('io')
+    if (io) io.to(`game:${id}`).emit('chat', result.rows[0])
+
     res.status(201).json(result.rows[0])
   } catch (err) {
     next(err)

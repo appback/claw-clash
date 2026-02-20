@@ -9,10 +9,20 @@ const gameStateManager = require('./gameStateManager')
 const matchmaker = require('./matchmaker')
 const chatPoolService = require('./chatPoolService')
 
+// Socket.io instance (set by startScheduler)
+let io = null
+
 /**
  * Start the race + game lifecycle scheduler.
+ * @param {import('socket.io').Server} socketIO - Socket.io server instance
  */
-function startScheduler() {
+function startScheduler(socketIO) {
+  io = socketIO || null
+  // Inject io into battleEngine and chatPoolService
+  if (io) {
+    battleEngine.setIO(io)
+    chatPoolService.setIO(io)
+  }
   // Recover stuck battles from previous crash/restart
   recoverStuckBattles().catch(err => {
     console.error('[Scheduler] Error recovering stuck battles:', err)
@@ -52,6 +62,11 @@ function startScheduler() {
   cron.schedule('15,45 * * * * *', async () => {
     try {
       await matchmaker.processQueue()
+      // Broadcast queue update after matchmaking
+      if (io) {
+        const qResult = await db.query('SELECT COUNT(*) AS cnt FROM battle_queue')
+        io.emit('queue_update', { players_in_queue: parseInt(qResult.rows[0].cnt) })
+      }
     } catch (err) {
       console.error('[Scheduler] Error in matchmaker processQueue:', err)
     }
@@ -89,6 +104,7 @@ async function processGameTransitions() {
   )
   for (const g of toLobby.rows) {
     console.log(`[Scheduler] Game '${g.title}' (${g.id}): created → lobby`)
+    if (io) io.to(`game:${g.id}`).emit('game_state', { state: 'lobby' })
   }
 
   // 2. lobby → betting (betting_start reached, need >= 2 entries)
@@ -103,6 +119,7 @@ async function processGameTransitions() {
   )
   for (const g of toBetting.rows) {
     console.log(`[Scheduler] Game '${g.title}' (${g.id}): lobby → betting`)
+    if (io) io.to(`game:${g.id}`).emit('game_state', { state: 'betting' })
   }
 
   // Cancel games that didn't get enough entries by betting time
@@ -173,6 +190,7 @@ async function processGameTransitions() {
     )
 
     console.log(`[Scheduler] Game '${game.title}' (${game.id}): betting → battle (${entries.rows.length} fighters)`)
+    if (io) io.to(`game:${game.id}`).emit('game_state', { state: 'battle' })
 
     // Preload chat pools into memory for 0ms battle chat
     await chatPoolService.preloadPools(game.id)

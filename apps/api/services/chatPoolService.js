@@ -8,6 +8,10 @@ const config = require('../config')
  * During battle, the engine calls triggerChat() to pick one and insert into game_chat.
  */
 
+// Socket.io instance (injected via setIO)
+let io = null
+function setIO(socketIO) { io = socketIO }
+
 const DEFAULT_POOL = {
   battle_start: ["Let's fight!", "Ready for battle!", "Here we go!"],
   kill: ["Got one!", "Down you go!", "Too easy!"],
@@ -52,11 +56,17 @@ async function triggerChat(gameId, agentId, category, tick, slot) {
   const message = messages[Math.floor(Math.random() * messages.length)]
 
   // Insert into game_chat
-  await db.query(
+  const insertResult = await db.query(
     `INSERT INTO game_chat (game_id, tick, msg_type, sender_id, slot, message)
-     VALUES ($1, $2, 'ai_taunt', $3, $4, $5)`,
+     VALUES ($1, $2, 'ai_taunt', $3, $4, $5)
+     RETURNING id, tick, msg_type, slot, message, created_at`,
     [gameId, tick, agentId, slot, message]
   )
+
+  // Push chat via WebSocket
+  if (io && insertResult.rows[0]) {
+    io.to(`game:${gameId}`).emit('chat', insertResult.rows[0])
+  }
 
   // Update cooldown
   chatCooldowns.set(`${gameId}:${agentId}`, tick)
@@ -128,6 +138,7 @@ function clearGameCache(gameId) {
 }
 
 module.exports = {
+  setIO,
   triggerChat,
   preloadPools,
   clearGameCache

@@ -18,6 +18,10 @@ const chatPoolService = require('./chatPoolService')
 // Active battle intervals: gameId → intervalId
 const battleIntervals = new Map()
 
+// Socket.io instance (injected via setIO)
+let io = null
+function setIO(socketIO) { io = socketIO }
+
 // =========================================
 // Public API
 // =========================================
@@ -233,6 +237,9 @@ function processTick(gameId) {
   game.tick = tick
   game.events = events
   gameStateManager.updateTick(gameId, tickState)
+
+  // Push tick via WebSocket
+  if (io) io.to(`game:${gameId}`).emit('tick', tickState)
 
   // Batch flush
   if (gameStateManager.shouldFlush(gameId)) {
@@ -810,6 +817,9 @@ async function finalizeBattle(gameId, finalTick, reason) {
 
   await gameStateManager.endGame(gameId)
 
+  // Push battle_ended via WebSocket
+  if (io) io.to(`game:${gameId}`).emit('battle_ended', { reason, rankings: results })
+
   const durationSec = Math.round(finalTick * config.tickIntervalMs / 1000)
   console.log(`[BattleEngine] Battle ended: ${gameId} (${reason}, tick ${finalTick}, ${durationSec}s, winner: slot ${results[0]?.slot})`)
 
@@ -1137,6 +1147,7 @@ function getAgentView(gameId, agentId) {
 }
 
 module.exports = {
+  setIO,
   startBattle,
   stopBattle,
   onBattleEnd,

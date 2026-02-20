@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { publicApi } from '../api'
+import socket from '../socket'
 import ThemeToggle from './ThemeToggle'
 
 export default function Nav() {
   const { pathname } = useLocation()
   const [menuOpen, setMenuOpen] = useState(false)
   const [isAdmin, setIsAdmin] = useState(!!localStorage.getItem('admin_token'))
+  const [queueCount, setQueueCount] = useState(0)
 
   useEffect(() => {
     function onStorage() {
@@ -17,6 +20,20 @@ export default function Nav() {
       window.removeEventListener('storage', onStorage)
       window.removeEventListener('admin-auth-change', onStorage)
     }
+  }, [])
+
+  useEffect(() => {
+    // Initial fetch via HTTP
+    publicApi.get('/queue/info')
+      .then(res => setQueueCount(res.data.players_in_queue || 0))
+      .catch(() => {})
+
+    // Real-time updates via WebSocket
+    function onQueueUpdate({ players_in_queue }) {
+      setQueueCount(players_in_queue || 0)
+    }
+    socket.on('queue_update', onQueueUpdate)
+    return () => socket.off('queue_update', onQueueUpdate)
   }, [])
 
   const links = [
@@ -38,6 +55,11 @@ export default function Nav() {
       <div className="nav-inner">
         <Link to="/" className="nav-brand">
           {'\uD83E\uDD80'} Claw Clash
+          {queueCount > 0 && (
+            <span className="nav-queue-badge" title={`${queueCount} fighters in queue`}>
+              {'\u2694\uFE0F'}{queueCount}
+            </span>
+          )}
         </Link>
         <button
           className="nav-toggle"
