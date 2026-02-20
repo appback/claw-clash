@@ -167,8 +167,22 @@ async function status(req, res, next) {
       [agent.id]
     )
 
+    // Check for active game regardless of queue status
+    const activeGame = await db.query(
+      `SELECT g.id, g.state FROM game_entries ge
+       JOIN games g ON g.id = ge.game_id
+       WHERE ge.agent_id = $1 AND g.state IN ('lobby', 'betting', 'battle')
+       LIMIT 1`,
+      [agent.id]
+    )
+    const activeGameInfo = activeGame.rows[0] || null
+
     if (entry.rows.length === 0) {
-      return res.json({ in_queue: false })
+      return res.json({
+        in_queue: false,
+        active_game_id: activeGameInfo?.id || null,
+        active_game_state: activeGameInfo?.state || null
+      })
     }
 
     const row = entry.rows[0]
@@ -179,7 +193,9 @@ async function status(req, res, next) {
       weapon_slug: row.weapon_slug,
       queued_at: row.queued_at,
       cooldown_until: inCooldown ? row.cooldown_until : null,
-      position_estimate: parseInt(row.total_in_queue) || 0
+      position_estimate: parseInt(row.total_in_queue) || 0,
+      active_game_id: activeGameInfo?.id || null,
+      active_game_state: activeGameInfo?.state || null
     })
   } catch (err) {
     next(err)

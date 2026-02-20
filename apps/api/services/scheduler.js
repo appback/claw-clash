@@ -559,6 +559,10 @@ async function recoverStuckBattles() {
   for (const row of result.rows) {
     if (!gameStateManager.getState(row.id)) {
       await db.query("UPDATE games SET state = 'ended', updated_at = now() WHERE id = $1", [row.id])
+      await db.query(
+        "UPDATE game_entries SET status = 'eliminated' WHERE game_id = $1 AND status = 'fighting'",
+        [row.id]
+      )
       console.log(`[Scheduler] Recovered stuck battle: ${row.title} (${row.id})`)
     }
   }
