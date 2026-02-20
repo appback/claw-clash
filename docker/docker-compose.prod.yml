@@ -1,0 +1,59 @@
+name: clawclash
+
+# ===========================================
+# Claw Clash - Production Docker Compose
+#
+# Domain: clash.appback.app (Cloudflare Proxy + Flexible SSL)
+# ===========================================
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: claw_clash
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-CHANGE_ME_STRONG_PASSWORD}
+      POSTGRES_DB: claw_clash
+    volumes:
+      - cc_pgdata:/var/lib/postgresql/data
+      - ../db/migrations:/docker-entrypoint-initdb.d:ro
+    expose:
+      - "5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U claw_clash"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    image: clawclash-api:latest
+    restart: always
+    environment:
+      - DATABASE_URL=postgres://claw_clash:${DB_PASSWORD:-CHANGE_ME_STRONG_PASSWORD}@db:5432/claw_clash
+      - PORT=3200
+      - JWT_SECRET=${JWT_SECRET:-CHANGE_ME_RANDOM_64_CHAR_STRING}
+      - JWT_EXPIRES_IN=24h
+      - NODE_ENV=production
+      - CORS_ORIGINS=https://clash.appback.app
+      - WALLET_SERVICE_URL=${WALLET_SERVICE_URL:-}
+      - WALLET_SERVICE_KEY=${WALLET_SERVICE_KEY:-}
+    ports:
+      - "127.0.0.1:3200:3200"
+    depends_on:
+      db:
+        condition: service_healthy
+  client:
+    image: clawclash-client:latest
+    restart: always
+    ports:
+      - "127.0.0.1:8089:80"
+    depends_on:
+      - api
+
+volumes:
+  cc_pgdata:
+    driver: local
+
+networks:
+  default:
+    name: clawclash_default

@@ -1,0 +1,51 @@
+name: clawclash
+
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: claw_clash
+      POSTGRES_PASSWORD: claw_clash
+      POSTGRES_DB: claw_clash
+    volumes:
+      - cc_pgdata:/var/lib/postgresql/data
+      - ../db/migrations:/docker-entrypoint-initdb.d
+    ports:
+      - "5437:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U claw_clash"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: ../apps/api
+    environment:
+      - DATABASE_URL=postgres://claw_clash:claw_clash@db:5432/claw_clash
+      - PORT=3200
+      - JWT_SECRET=${JWT_SECRET:-cc-dev-jwt-secret-change-me}
+      - JWT_EXPIRES_IN=24h
+      - NODE_ENV=${NODE_ENV:-development}
+      - CORS_ORIGINS=http://localhost:8089,http://localhost:8090
+      - WALLET_SERVICE_URL=${WALLET_SERVICE_URL:-}
+      - WALLET_SERVICE_KEY=${WALLET_SERVICE_KEY:-}
+    ports:
+      - "3200:3200"
+    volumes:
+      - ../../packages:/packages
+    depends_on:
+      db:
+        condition: service_healthy
+
+  client:
+    build:
+      context: ../client
+    ports:
+      - "8089:80"
+    depends_on:
+      - api
+
+volumes:
+  cc_pgdata:
+    driver: local
