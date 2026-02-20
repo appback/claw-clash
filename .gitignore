@@ -3,3 +3,22 @@ node_modules/
 *.log
 dist/
 .claude/
+
+# Production secrets (never commit)
+docker/.env
+
+# Build output
+client/dist/
+
+# Windows artifacts
+*.Zone.Identifier
+*Zone.Identifier
+NUL
+
+# bkit state
+.bkit/
+
+# Misc
+*.pem
+*.tar
+*.tar.gz
