@@ -9,9 +9,136 @@ const config = require('../config')
  */
 
 /**
+ * Fill empty slots in existing lobby games with queued agents.
+ * Runs before new game creation — prioritizes filling existing games.
+ */
+async function fillExistingLobbies() {
+  // Find lobby games with empty slots
+  const lobbyGames = await db.query(`
+    SELECT g.id, g.max_entries,
+           (SELECT COUNT(*) FROM game_entries ge WHERE ge.game_id = g.id)::int AS entry_count
+    FROM games g
+    WHERE g.state = 'lobby'
+    ORDER BY g.lobby_start ASC
+  `)
+
+  const gamesWithSlots = lobbyGames.rows.filter(g => g.entry_count < g.max_entries)
+  if (gamesWithSlots.length === 0) return
+
+  // Get eligible queue agents
+  const queue = await db.query(
+    `SELECT bq.agent_id, bq.weapon_slug, bq.chat_pool, bq.strategy
+     FROM battle_queue bq
+     WHERE (bq.cooldown_until IS NULL OR bq.cooldown_until < now())
+     ORDER BY bq.queued_at ASC`
+  )
+  if (queue.rows.length === 0) return
+
+  let remaining = [...queue.rows]
+
+  for (const game of gamesWithSlots) {
+    if (remaining.length === 0) break
+
+    // Find available slot numbers
+    const taken = await db.query(
+      'SELECT slot FROM game_entries WHERE game_id = $1',
+      [game.id]
+    )
+    const takenSet = new Set(taken.rows.map(r => r.slot))
+    const availableSlots = []
+    for (let s = 0; s < game.max_entries; s++) {
+      if (!takenSet.has(s)) availableSlots.push(s)
+    }
+    if (availableSlots.length === 0) continue
+
+    const toAssign = remaining.slice(0, availableSlots.length)
+
+    const client = await db.getClient()
+    try {
+      await client.query('BEGIN')
+
+      const allWeapons = await client.query(
+        'SELECT id, slug FROM weapons WHERE is_active = true'
+      )
+
+      for (let i = 0; i < toAssign.length; i++) {
+        const agent = toAssign[i]
+        const slot = availableSlots[i]
+
+        // Weapon assignment (same logic as createQueueGame)
+        let weaponId
+        if (agent.weapon_slug) {
+          const weapon = await client.query(
+            'SELECT id FROM weapons WHERE slug = $1 AND is_active = true',
+            [agent.weapon_slug]
+          )
+          weaponId = weapon.rows.length > 0 ? weapon.rows[0].id : null
+        }
+        if (!weaponId && allWeapons.rows.length > 0) {
+          weaponId = allWeapons.rows[Math.floor(Math.random() * allWeapons.rows.length)].id
+        }
+        if (!weaponId) {
+          weaponId = (await client.query("SELECT id FROM weapons WHERE slug = 'sword'")).rows[0].id
+        }
+
+        const defaultStrategy = { mode: 'balanced', target_priority: 'nearest', flee_threshold: config.defaultFleeThreshold }
+        const strategy = agent.strategy || defaultStrategy
+
+        await client.query(
+          `INSERT INTO game_entries (game_id, agent_id, slot, weapon_id, initial_strategy)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [game.id, agent.agent_id, slot, weaponId, JSON.stringify(strategy)]
+        )
+
+        // Transfer chat pool
+        if (agent.chat_pool) {
+          const pool = typeof agent.chat_pool === 'string' ? JSON.parse(agent.chat_pool) : agent.chat_pool
+          await client.query(
+            `INSERT INTO agent_chat_pool (game_id, agent_id, responses)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (game_id, agent_id) DO UPDATE SET responses = $3`,
+            [game.id, agent.agent_id, JSON.stringify(pool)]
+          )
+        }
+
+        // Record history
+        await client.query(
+          'INSERT INTO matchmaking_history (game_id, agent_id) VALUES ($1, $2)',
+          [game.id, agent.agent_id]
+        )
+
+        // Remove from queue
+        await client.query('DELETE FROM battle_queue WHERE agent_id = $1', [agent.agent_id])
+      }
+
+      // System chat notification
+      await client.query(
+        `INSERT INTO game_chat (game_id, msg_type, message)
+         VALUES ($1, 'system', $2)`,
+        [game.id, `${toAssign.length} more warrior${toAssign.length > 1 ? 's' : ''} joined the arena!`]
+      )
+
+      await client.query('COMMIT')
+      console.log(`[Matchmaker] Filled ${toAssign.length} slots in lobby game ${game.id}`)
+
+      const assignedIds = new Set(toAssign.map(a => a.agent_id))
+      remaining = remaining.filter(a => !assignedIds.has(a.agent_id))
+    } catch (err) {
+      await client.query('ROLLBACK')
+      console.error('[Matchmaker] Failed to fill lobby:', err)
+    } finally {
+      client.release()
+    }
+  }
+}
+
+/**
  * Main entry point: process the matchmaking queue.
  */
 async function processQueue() {
+  // First, fill empty slots in existing lobby games
+  await fillExistingLobbies()
+
   // Get eligible agents (not in cooldown)
   const queue = await db.query(
     `SELECT bq.id, bq.agent_id, bq.weapon_slug, bq.queued_at,
