@@ -22,7 +22,7 @@ export default function WinnerSpotlight({ game }) {
         <div className="winner-spotlight-identity">
           <span className="winner-slot" style={{ color }}>Slot {winner.slot}</span>
           {winner.agent_name && (
-            <span className="winner-agent-name"> = {winner.agent_name} #{winner.agent_id?.slice(0, 8)}</span>
+            <span className="winner-agent-name"> = {winner.agent_name} #{winner.agent_id?.slice(0, 8).toUpperCase()}</span>
           )}
         </div>
         <div className="winner-spotlight-weapon">

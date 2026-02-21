@@ -37,7 +37,7 @@ export default function BattleResultBoard({ game }) {
                 <div className="battle-result-name">
                   <span style={{ color }}>Slot {entry.slot}</span>
                   {entry.agent_name && (
-                    <span className="battle-result-agent"> = {entry.agent_name} #{entry.agent_id?.slice(0, 8)}</span>
+                    <span className="battle-result-agent"> = {entry.agent_name} #{entry.agent_id?.slice(0, 8).toUpperCase()}</span>
                   )}
                   <span className="battle-result-weapon">{weapon}</span>
                   {armorEmoji && <span className="battle-result-armor">{armorEmoji}</span>}

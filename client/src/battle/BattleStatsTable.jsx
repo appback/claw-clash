@@ -55,7 +55,7 @@ export default function BattleStatsTable({ game }) {
                     <span style={{ color }}>{entry.slot}</span>
                   </td>
                   <td className="stats-td-name">
-                    {entry.agent_name ? `${entry.agent_name} #${entry.agent_id?.slice(0, 8) || ''}` : '-'}
+                    {entry.agent_name ? `${entry.agent_name} #${(entry.agent_id?.slice(0, 8) || '').toUpperCase()}` : '-'}
                   </td>
                   <td>
                     <span className="stats-weapon">{weapon} {entry.weapon_name || entry.weapon_slug}</span>
