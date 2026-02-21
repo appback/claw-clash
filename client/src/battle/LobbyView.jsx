@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { WEAPON_EMOJI, SLOT_COLORS } from './AgentToken'
+import { WEAPON_EMOJI, ARMOR_EMOJI, SLOT_COLORS } from './AgentToken'
 import AgentFace from './AgentFace'
 import CountdownTimer from '../components/CountdownTimer'
 import { publicApi, userApi } from '../api'
@@ -124,11 +124,14 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
 
           const color = SLOT_COLORS[i % SLOT_COLORS.length]
           const weaponIcon = WEAPON_EMOJI[entry.weapon_slug] || '\u2694\uFE0F'
+          const armorIcon = ARMOR_EMOJI[entry.armor_slug] || ''
           const sponsorship = entry.sponsorship || {}
           const bonusHp = sponsorship.hp_boost || entry.bonus_hp || 0
           const bonusDmg = sponsorship.weapon_boost || entry.bonus_damage || 0
           const baseHp = 100
           const baseDmg = entry.weapon_damage || 10
+          const defPct = Math.round((entry.armor_dmg_reduction || 0) * 100)
+          const evdPct = Math.round((entry.armor_evasion || 0) * 100)
 
           const slotBetCount = betCounts[i] || 0
           const slotMyBets = myBetsBySlot[i] || []
@@ -138,7 +141,10 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
             <div key={i} className="lobby-slot" style={{ '--slot-color': color }}>
               <div className="lobby-slot-header">
                 <span className="lobby-slot-number" style={{ color }}>Slot {i}</span>
-                <span className="lobby-slot-weapon">{weaponIcon} {entry.weapon_name || entry.weapon_slug}</span>
+                <span className="lobby-slot-weapon">
+                  {weaponIcon} {entry.weapon_name || entry.weapon_slug}
+                  {armorIcon && <span className="lobby-slot-armor">{armorIcon} {entry.armor_name || entry.armor_slug}</span>}
+                </span>
               </div>
 
               <div className="lobby-slot-visual">
@@ -168,6 +174,18 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
                     {bonusDmg > 0 && <span className="lobby-stat-bonus"> (+{bonusDmg})</span>}
                   </span>
                 </div>
+                {defPct > 0 && (
+                  <div className="lobby-stat">
+                    <span className="lobby-stat-label">DEF</span>
+                    <span className="lobby-stat-value">{defPct}%</span>
+                  </div>
+                )}
+                {evdPct > 0 && (
+                  <div className="lobby-stat">
+                    <span className="lobby-stat-label">EVD</span>
+                    <span className="lobby-stat-value">{evdPct}%</span>
+                  </div>
+                )}
               </div>
 
               {/* Bet row — appended below stats during betting phase */}

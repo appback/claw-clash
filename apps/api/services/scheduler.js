@@ -171,10 +171,14 @@ async function processGameTransitions() {
               w.damage_min AS weapon_damage_min, w.damage_max AS weapon_damage_max,
               w.range AS weapon_range,
               w.cooldown AS weapon_cooldown, w.aoe_radius AS weapon_aoe_radius, w.skill AS weapon_skill,
-              w.speed AS weapon_speed
+              w.atk_speed AS weapon_atk_speed, w.move_speed AS weapon_move_speed,
+              ar.slug AS armor_slug, ar.dmg_reduction AS armor_dmg_reduction,
+              ar.evasion AS armor_evasion, ar.move_mod AS armor_move_mod,
+              ar.atk_mod AS armor_atk_mod, ar.emoji AS armor_emoji
        FROM game_entries ge
        JOIN weapons w ON w.id = ge.weapon_id
        JOIN agents ag ON ag.id = ge.agent_id
+       LEFT JOIN armors ar ON ar.id = ge.armor_id
        WHERE ge.game_id = $1
        ORDER BY ge.slot`,
       [game.id]

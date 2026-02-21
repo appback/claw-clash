@@ -1,5 +1,5 @@
 import React from 'react'
-import { SLOT_COLORS, WEAPON_EMOJI } from './AgentToken'
+import { SLOT_COLORS, WEAPON_EMOJI, ARMOR_EMOJI } from './AgentToken'
 
 const RANK_MEDALS = {
   1: '\uD83E\uDD47',
@@ -25,6 +25,7 @@ export default function BattleResultBoard({ game }) {
         {sorted.map(entry => {
           const color = SLOT_COLORS[entry.slot % SLOT_COLORS.length]
           const weapon = WEAPON_EMOJI[entry.weapon_slug] || '\u2694\uFE0F'
+          const armorEmoji = ARMOR_EMOJI[entry.armor_slug] || ''
           const medal = RANK_MEDALS[entry.final_rank] || ''
 
           return (
@@ -36,9 +37,10 @@ export default function BattleResultBoard({ game }) {
                 <div className="battle-result-name">
                   <span style={{ color }}>Slot {entry.slot}</span>
                   {entry.agent_name && (
-                    <span className="battle-result-agent"> = {entry.agent_name}</span>
+                    <span className="battle-result-agent"> = {entry.agent_name} #{entry.agent_id?.slice(0, 8)}</span>
                   )}
                   <span className="battle-result-weapon">{weapon}</span>
+                  {armorEmoji && <span className="battle-result-armor">{armorEmoji}</span>}
                 </div>
                 <div className="battle-result-stats">
                   <span>Score: {entry.total_score}</span>

@@ -4,15 +4,15 @@ const gameStateManager = require('./gameStateManager')
 const chatPoolService = require('./chatPoolService')
 
 /**
- * Battle Engine v2.5 — Turn-Based Sub-Tick System
+ * Battle Engine v3.0 — Dual Accumulator Round System + Armor
  *
- * Key changes from v2:
- * - 200ms ticks (was 1000ms)
- * - Initiative-based turns: only 1 agent acts per tick
- * - Weapon speed stat determines turn frequency
- * - No simultaneous movement = no collision issues
- * - Passive effects (terrain, ring, buffs) every 5 ticks (=1s)
- * - AI seeks ALL nearby powerups (not just heal_pack when low HP)
+ * Key changes from v2.5:
+ * - 200ms ticks kept (passive effects)
+ * - Every 5 ticks (1s) = 1 Action Round
+ * - Dual accumulators: atkAcc + moveAcc (independent)
+ * - Initiative replaced by atkAcc priority ordering
+ * - Armor system: damage reduction, evasion, speed modifiers
+ * - AI split: decideMove() + decideAttack() (independent decisions)
  */
 
 // Active battle intervals: gameId → intervalId
@@ -21,6 +21,14 @@ const battleIntervals = new Map()
 // Socket.io instance (injected via setIO)
 let io = null
 function setIO(socketIO) { io = socketIO }
+
+// =========================================
+// Helpers
+// =========================================
+
+function clampSpeed(val) {
+  return Math.max(config.speedClampMin, Math.min(config.speedClampMax, val))
+}
 
 // =========================================
 // Public API
@@ -36,6 +44,27 @@ function startBattle(game, arena, entries) {
 
   const agents = entries.map((entry, i) => {
     const spawn = spawnPoints[i] || [0, 0]
+
+    // Parse armor data (may be null for legacy entries)
+    const armor = entry.armor_slug ? {
+      slug: entry.armor_slug,
+      dmgReduction: entry.armor_dmg_reduction || 0,
+      evasion: entry.armor_evasion || 0,
+      moveMod: entry.armor_move_mod || 0,
+      atkMod: entry.armor_atk_mod || 0,
+      emoji: entry.armor_emoji || '➖'
+    } : {
+      slug: 'no_armor',
+      dmgReduction: 0,
+      evasion: 0,
+      moveMod: 0,
+      atkMod: 0,
+      emoji: '➖'
+    }
+
+    const weaponAtkSpeed = entry.weapon_atk_speed || 100
+    const weaponMoveSpeed = entry.weapon_move_speed || 100
+
     return {
       slot: entry.slot,
       agentId: entry.agent_id,
@@ -53,10 +82,14 @@ function startBattle(game, arena, entries) {
         cooldown: entry.weapon_cooldown,
         aoeRadius: entry.weapon_aoe_radius || 0,
         skill: entry.weapon_skill || null,
-        speed: entry.weapon_speed || 3
+        atkSpeed: weaponAtkSpeed,
+        moveSpeed: weaponMoveSpeed
       },
-      cooldown: 0,
-      initiative: 0,
+      armor,
+      effectiveAtkSpeed: clampSpeed(weaponAtkSpeed + armor.atkMod),
+      effectiveMoveSpeed: clampSpeed(weaponMoveSpeed + armor.moveMod),
+      atkAcc: 0,
+      moveAcc: 0,
       score: 0,
       kills: 0,
       damageDealt: 0,
@@ -121,7 +154,7 @@ function onBattleEnd(callback) {
 }
 
 // =========================================
-// Core Tick Processing (Turn-Based)
+// Core Tick Processing (Round-Based)
 // =========================================
 
 function processTick(gameId) {
@@ -174,38 +207,22 @@ function processTick(gameId) {
     for (const agent of game.agents.filter(a => a.alive)) {
       agent.survivedTicks++
     }
-  }
 
-  // === TURN-BASED: Find acting agent via initiative system ===
-  const actor = getActingAgent(livingAgents)
-
-  if (actor) {
-    // Decrement cooldown at start of agent's turn
-    if (actor.cooldown > 0) actor.cooldown--
-    if (actor.strategyCooldown > 0) actor.strategyCooldown--
-
-    // Decide action
-    actor.action = decideAction(actor, game, shrinkPhase)
-
-    // Resolve action (single agent — no collision possible)
-    if (actor.action.type === 'move') {
-      resolveSingleMove(actor, game, events)
-      collectPowerupsForAgent(actor, game, events)
-    } else if (actor.action.type === 'attack') {
-      resolveSingleAttack(actor, game, events)
-    }
-
-    events.push({ type: 'turn', slot: actor.slot, action: actor.action.type })
-  }
-
-  // Check eliminations
-  for (const agent of livingAgents) {
-    if (agent.hp <= 0) {
-      agent.hp = 0
-      agent.alive = false
-      events.push({ type: 'elimination', slot: agent.slot, tick })
+    // Decrement strategy cooldowns once per second
+    for (const agent of livingAgents) {
+      if (agent.strategyCooldown > 0) agent.strategyCooldown--
     }
   }
+
+  // === ACTION ROUND: every actionRoundTicks (5 ticks = 1 second) ===
+  const isActionRound = (tick % config.actionRoundTicks === 0)
+
+  if (isActionRound) {
+    processActionRound(game, events, shrinkPhase)
+  }
+
+  // Check eliminations (from passive damage like ring/terrain)
+  checkEliminations(game, events, tick)
 
   // Fire-and-forget chat triggers from pre-generated pool
   triggerChatEvents(gameId, game, tick, events)
@@ -214,19 +231,15 @@ function processTick(gameId) {
   const tickState = {
     tick,
     shrinkPhase,
-    actorSlot: actor ? actor.slot : null,
     agents: game.agents.map(a => ({
       slot: a.slot,
       hp: a.hp,
       maxHp: a.maxHp,
       x: a.x,
       y: a.y,
-      action: a.action ? a.action.type : null,
-      target_slot: a.action && a.action.targetSlot != null ? a.action.targetSlot : undefined,
-      direction: a.action && a.action.direction ? a.action.direction : undefined,
-      cooldown: a.cooldown,
       alive: a.alive,
       score: a.score,
+      armor: a.armor.slug,
       buffs: a.buffs.map(b => b.type)
     })),
     powerups: game.powerups.map(p => ({ type: p.type, x: p.x, y: p.y })),
@@ -256,41 +269,235 @@ function processTick(gameId) {
 }
 
 // =========================================
-// Initiative System (Turn Order)
+// Action Round (Dual Accumulator System)
+// =========================================
+
+function processActionRound(game, events, shrinkPhase) {
+  const living = game.agents.filter(a => a.alive)
+
+  // 1. Accumulate speeds
+  for (const agent of living) {
+    agent.atkAcc += agent.effectiveAtkSpeed
+    agent.moveAcc += agent.effectiveMoveSpeed
+  }
+
+  // 2. Sort by atkAcc (highest first = initiative), tiebreak random
+  const sorted = [...living].sort((a, b) => b.atkAcc - a.atkAcc || Math.random() - 0.5)
+
+  // 3. Build shared occupied set
+  const occupied = buildOccupiedSet(game)
+  const threshold = config.actionThreshold
+
+  // 4. Each agent acts in order
+  for (const agent of sorted) {
+    if (!agent.alive) continue
+
+    // a. Pre-attack (atkAcc >= 200 → bonus attack before move)
+    if (agent.atkAcc >= threshold * 2) {
+      resolveAttackAction(agent, game, events)
+      agent.atkAcc -= threshold
+      events.push({ type: 'bonus_attack', slot: agent.slot })
+    }
+
+    // b. Move (moveAcc >= 100)
+    if (agent.moveAcc >= threshold) {
+      resolveMoveAction(agent, game, events, occupied, shrinkPhase)
+      agent.moveAcc -= threshold
+    }
+
+    // c. Attack (atkAcc >= 100)
+    if (agent.atkAcc >= threshold) {
+      resolveAttackAction(agent, game, events)
+      agent.atkAcc -= threshold
+    }
+
+    // d. Bonus move (moveAcc >= 100 still)
+    if (agent.moveAcc >= threshold) {
+      resolveMoveAction(agent, game, events, occupied, shrinkPhase)
+      agent.moveAcc -= threshold
+    }
+
+    // Check eliminations after each agent's turn
+    checkEliminations(game, events, game.tick + 1)
+  }
+}
+
+function buildOccupiedSet(game) {
+  const occupied = new Set()
+  for (const a of game.agents) {
+    if (a.alive) occupied.add(`${a.x},${a.y}`)
+  }
+  return occupied
+}
+
+function checkEliminations(game, events, tick) {
+  for (const agent of game.agents) {
+    if (agent.alive && agent.hp <= 0) {
+      agent.hp = 0
+      agent.alive = false
+      events.push({ type: 'elimination', slot: agent.slot, tick })
+    }
+  }
+}
+
+// =========================================
+// Action Resolution
 // =========================================
 
 /**
- * Each tick, all agents accumulate initiative by their weapon speed.
- * Agent with highest initiative >= threshold takes their turn.
- * Returns the acting agent or null.
+ * Resolve a move action: AI decides direction, then execute move.
  */
-function getActingAgent(agents) {
-  const threshold = config.turnThreshold || 10
+function resolveMoveAction(agent, game, events, occupied, shrinkPhase) {
+  const moveDecision = decideMove(agent, game, shrinkPhase, occupied)
+  if (moveDecision.type === 'move') {
+    agent.action = moveDecision
+    executeSingleMove(agent, game, events, occupied)
+    collectPowerupsForAgent(agent, game, events)
+  }
+}
 
-  // Increment initiative for all alive agents
-  for (const agent of agents) {
-    if (!agent.alive) continue
-    agent.initiative += agent.weapon.speed
+/**
+ * Resolve an attack action: AI decides target, then execute attack.
+ */
+function resolveAttackAction(agent, game, events) {
+  const atkDecision = decideAttack(agent, game)
+  if (atkDecision) {
+    agent.action = atkDecision
+    resolveSingleAttack(agent, game, events)
+  }
+}
+
+// =========================================
+// AI Decision — Move
+// =========================================
+
+function decideMove(agent, game, shrinkPhase, occupied) {
+  const personality = getPersonalityModifiers(agent.personality)
+  const strategy = agent.strategy
+  const enemies = game.agents
+    .filter(a => a.alive && a.slot !== agent.slot)
+    .sort((a, b) => manhattanDist(agent, a) - manhattanDist(agent, b))
+
+  if (enemies.length === 0) return { type: 'stay' }
+
+  // Troll: random move
+  if (personality.randomChance > 0 && Math.random() < personality.randomChance) {
+    const dirs = ['up', 'down', 'left', 'right']
+    return { type: 'move', direction: dirs[Math.floor(Math.random() * dirs.length)] }
   }
 
-  // Find agent with highest initiative >= threshold
-  let best = null
-  let bestInit = 0
-  for (const agent of agents) {
-    if (!agent.alive) continue
-    if (agent.initiative >= threshold) {
-      if (agent.initiative > bestInit || (agent.initiative === bestInit && Math.random() > 0.5)) {
-        bestInit = agent.initiative
-        best = agent
+  // Priority 1: Escape danger zone
+  if (isInDangerZone(agent.x, agent.y, shrinkPhase, game.arena.grid_width, game.arena.grid_height)) {
+    return moveToSafeZone(agent, shrinkPhase, game.arena, occupied)
+  }
+
+  // Anti-deadlock
+  const forceEngage = agent.consecutiveFleeTicks >= 50
+
+  // Priority 2: Flee threshold (personality-adjusted)
+  const baseFleeThreshold = strategy.flee_threshold != null ? strategy.flee_threshold : config.defaultFleeThreshold
+  const fleeThreshold = Math.floor(baseFleeThreshold * personality.fleeMultiplier)
+
+  if (!forceEngage && fleeThreshold > 0 && agent.hp <= fleeThreshold) {
+    const nearest = enemies[0]
+    const fleeAction = moveAwayFrom(agent, nearest, game.arena, occupied)
+    if (fleeAction.type !== 'stay') {
+      agent.consecutiveFleeTicks++
+      return fleeAction
+    }
+  }
+
+  // Priority 3: Flee if 2+ enemies targeting me
+  if (!forceEngage && agent.personality !== 'aggressive') {
+    const threatCount = game.agents.filter(a =>
+      a.alive && a.slot !== agent.slot && a.action?.targetSlot === agent.slot
+    ).length
+    if (threatCount >= 2) {
+      const fleeAction = moveAwayFrom(agent, enemies[0], game.arena, occupied)
+      if (fleeAction.type !== 'stay') {
+        agent.consecutiveFleeTicks++
+        return fleeAction
       }
     }
   }
 
-  if (best) {
-    best.initiative -= threshold
+  // Priority 4: Powerup collection
+  if (game.powerups.length > 0) {
+    const nearestPowerup = findNearestPowerup(agent, game, null)
+    if (nearestPowerup) {
+      const puDist = manhattanDist(agent, nearestPowerup)
+      if (puDist <= 2) {
+        return moveToward(agent, nearestPowerup, game.arena, occupied)
+      }
+      if (nearestPowerup.type === 'heal_pack' && agent.hp < agent.maxHp * 0.7 && puDist <= 4) {
+        return moveToward(agent, nearestPowerup, game.arena, occupied)
+      }
+      const nearestEnemy = enemies[0]
+      if (nearestEnemy && puDist < manhattanDist(agent, nearestEnemy)) {
+        return moveToward(agent, nearestPowerup, game.arena, occupied)
+      }
+    }
   }
 
-  return best
+  // Priority 5: Ranged kiting
+  const target = selectTarget(enemies, strategy.target_priority)
+  if (target && agent.weapon.range > 1) {
+    const dist = manhattanDist(agent, target)
+    if (dist < 2) {
+      return moveAwayFrom(agent, target, game.arena, occupied)
+    }
+  }
+
+  // Priority 6: Move toward target (based on strategy mode)
+  const effectiveMode = agent.personality === 'aggressive' ? 'aggressive' : strategy.mode
+
+  switch (effectiveMode) {
+    case 'aggressive':
+      agent.consecutiveFleeTicks = 0
+      if (target) return moveToward(agent, target, game.arena, occupied)
+      break
+    case 'defensive':
+      return { type: 'stay' }
+    case 'balanced':
+    default:
+      if (forceEngage || agent.hp > agent.maxHp * personality.balancedFleeHpPct) {
+        agent.consecutiveFleeTicks = 0
+        if (target) return moveToward(agent, target, game.arena, occupied)
+      } else {
+        const fleeAction = moveAwayFrom(agent, enemies[0], game.arena, occupied)
+        agent.consecutiveFleeTicks++
+        return fleeAction
+      }
+  }
+
+  return { type: 'stay' }
+}
+
+// =========================================
+// AI Decision — Attack
+// =========================================
+
+function decideAttack(agent, game) {
+  const strategy = agent.strategy
+  const enemies = game.agents
+    .filter(a => a.alive && a.slot !== agent.slot)
+    .sort((a, b) => manhattanDist(agent, a) - manhattanDist(agent, b))
+
+  if (enemies.length === 0) return null
+
+  const target = selectTarget(enemies, strategy.target_priority)
+  if (!target) return null
+
+  const dist = manhattanDist(agent, target)
+
+  // Range check
+  if (dist > agent.weapon.range) return null
+
+  // Ranged minimum distance
+  if (agent.weapon.range > 1 && dist < 2) return null
+
+  agent.consecutiveFleeTicks = 0
+  return { type: 'attack', targetSlot: target.slot }
 }
 
 // =========================================
@@ -388,17 +595,9 @@ function applyPowerup(agent, powerup, events) {
 }
 
 // =========================================
-// Action Decision (Rule Engine v3.0 — Personality-Aware)
+// Personality Modifiers
 // =========================================
 
-/**
- * Personality modifiers:
- *   aggressive — flee_threshold ×0 (never flee), always chase
- *   confident  — flee_threshold ×0.5, balanced flee at HP < 15%
- *   friendly   — no modifier (default), uses strategy as-is
- *   cautious   — flee_threshold ×1.5, balanced flee at HP < 50%
- *   troll      — 20% random action, flee_threshold fluctuates
- */
 function getPersonalityModifiers(personality) {
   switch (personality) {
     case 'aggressive': return { fleeMultiplier: 0, balancedFleeHpPct: 0, randomChance: 0 }
@@ -407,131 +606,6 @@ function getPersonalityModifiers(personality) {
     case 'troll':      return { fleeMultiplier: Math.random() * 2, balancedFleeHpPct: 0.3, randomChance: 0.2 }
     case 'friendly':
     default:           return { fleeMultiplier: 1.0, balancedFleeHpPct: 0.3, randomChance: 0 }
-  }
-}
-
-function decideAction(agent, game, shrinkPhase) {
-  const strategy = agent.strategy
-  const personality = getPersonalityModifiers(agent.personality)
-  const enemies = game.agents
-    .filter(a => a.alive && a.slot !== agent.slot)
-    .sort((a, b) => manhattanDist(agent, a) - manhattanDist(agent, b))
-
-  if (enemies.length === 0) return { type: 'stay' }
-
-  // Build occupied set once for all move decisions
-  const occupied = new Set()
-  for (const a of game.agents) {
-    if (a.alive && a.slot !== agent.slot) occupied.add(`${a.x},${a.y}`)
-  }
-
-  // Troll: random action chance
-  if (personality.randomChance > 0 && Math.random() < personality.randomChance) {
-    const actions = ['attack', 'move', 'stay']
-    const pick = actions[Math.floor(Math.random() * actions.length)]
-    if (pick === 'attack' && enemies.length > 0) {
-      const rTarget = enemies[Math.floor(Math.random() * enemies.length)]
-      const d = manhattanDist(agent, rTarget)
-      if (d <= agent.weapon.range && agent.cooldown === 0) {
-        return { type: 'attack', targetSlot: rTarget.slot }
-      }
-    }
-    if (pick === 'move') {
-      const dirs = ['up', 'down', 'left', 'right']
-      return { type: 'move', direction: dirs[Math.floor(Math.random() * dirs.length)] }
-    }
-    // fall through to normal logic if random action didn't work
-  }
-
-  // Priority 1: Escape danger zone
-  if (isInDangerZone(agent.x, agent.y, shrinkPhase, game.arena.grid_width, game.arena.grid_height)) {
-    return moveToSafeZone(agent, shrinkPhase, game.arena, occupied)
-  }
-
-  // Priority 2: Opportunistic powerup collection (ANY type, ANY HP level)
-  if (game.powerups.length > 0) {
-    const nearestPowerup = findNearestPowerup(agent, game, null)
-    if (nearestPowerup) {
-      const puDist = manhattanDist(agent, nearestPowerup)
-
-      // Very close powerup (1-2 tiles) — always grab it
-      if (puDist <= 2) {
-        return moveToward(agent, nearestPowerup, game.arena, occupied)
-      }
-
-      // Heal pack when HP < 70% — go for it if within 4 tiles
-      if (nearestPowerup.type === 'heal_pack' && agent.hp < agent.maxHp * 0.7 && puDist <= 4) {
-        return moveToward(agent, nearestPowerup, game.arena, occupied)
-      }
-
-      // Any powerup closer than nearest enemy — divert to collect
-      const nearestEnemy = enemies[0]
-      if (nearestEnemy && puDist < manhattanDist(agent, nearestEnemy)) {
-        return moveToward(agent, nearestPowerup, game.arena, occupied)
-      }
-    }
-  }
-
-  // Anti-deadlock: if fleeing too long (>50 consecutive ticks = 10s), force engagement
-  const forceEngage = agent.consecutiveFleeTicks >= 50
-
-  // Priority 3: Flee threshold (personality-adjusted)
-  const baseFleeThreshold = strategy.flee_threshold != null ? strategy.flee_threshold : config.defaultFleeThreshold
-  const fleeThreshold = Math.floor(baseFleeThreshold * personality.fleeMultiplier)
-
-  if (!forceEngage && fleeThreshold > 0 && agent.hp <= fleeThreshold) {
-    const nearest = enemies[0]
-
-    // Try to flee, but if cornered → fight back
-    const fleeAction = moveAwayFrom(agent, nearest, game.arena, occupied)
-    if (fleeAction.type === 'stay') {
-      const dist = manhattanDist(agent, nearest)
-      if (dist <= agent.weapon.range && agent.cooldown === 0) {
-        agent.consecutiveFleeTicks = 0
-        return { type: 'attack', targetSlot: nearest.slot }
-      }
-    }
-    agent.consecutiveFleeTicks++
-    return fleeAction
-  }
-
-  // Select target
-  const target = selectTarget(enemies, strategy.target_priority)
-  if (!target) return { type: 'stay' }
-
-  // Attack if in range and not on cooldown
-  const dist = manhattanDist(agent, target)
-  if (dist <= agent.weapon.range && agent.cooldown === 0) {
-    agent.consecutiveFleeTicks = 0
-    return { type: 'attack', targetSlot: target.slot }
-  }
-
-  // Movement based on mode (personality affects balanced flee threshold)
-  const effectiveMode = agent.personality === 'aggressive' ? 'aggressive' : strategy.mode
-
-  switch (effectiveMode) {
-    case 'aggressive':
-      agent.consecutiveFleeTicks = 0
-      return moveToward(agent, target, game.arena, occupied)
-    case 'defensive':
-      return { type: 'stay' }
-    case 'balanced':
-    default:
-      if (forceEngage || agent.hp > agent.maxHp * personality.balancedFleeHpPct) {
-        agent.consecutiveFleeTicks = 0
-        return moveToward(agent, target, game.arena, occupied)
-      } else {
-        const fleeAction = moveAwayFrom(agent, enemies[0], game.arena, occupied)
-        if (fleeAction.type === 'stay') {
-          const d = manhattanDist(agent, enemies[0])
-          if (d <= agent.weapon.range && agent.cooldown === 0) {
-            agent.consecutiveFleeTicks = 0
-            return { type: 'attack', targetSlot: enemies[0].slot }
-          }
-        }
-        agent.consecutiveFleeTicks++
-        return fleeAction
-      }
   }
 }
 
@@ -568,10 +642,10 @@ function selectTarget(enemies, priority) {
 }
 
 // =========================================
-// Single-Agent Movement (No Collisions)
+// Movement Execution
 // =========================================
 
-function resolveSingleMove(agent, game, events) {
+function executeSingleMove(agent, game, events, occupied) {
   const dir = agent.action.direction
   if (!dir) return
 
@@ -581,11 +655,8 @@ function resolveSingleMove(agent, game, events) {
   let nx = agent.x
   let ny = agent.y
 
-  // Build occupied set (all alive agents except self)
-  const occupied = new Set()
-  for (const a of game.agents) {
-    if (a.alive && a.slot !== agent.slot) occupied.add(`${a.x},${a.y}`)
-  }
+  // Remove self from occupied before moving
+  occupied.delete(`${agent.x},${agent.y}`)
 
   for (let s = 0; s < steps; s++) {
     const cx = nx + (dir === 'right' ? 1 : dir === 'left' ? -1 : 0)
@@ -593,8 +664,8 @@ function resolveSingleMove(agent, game, events) {
 
     if (cx < 0 || cx >= arena.grid_width || cy < 0 || cy >= arena.grid_height) break
     const t = getTerrain(arena.terrain, cx, cy)
-    if (t === 1 || t === 2) break  // wall and bush block movement
-    if (occupied.has(`${cx},${cy}`)) break  // another agent blocks movement
+    if (t === 1 || t === 2) break
+    if (occupied.has(`${cx},${cy}`)) break
 
     nx = cx
     ny = cy
@@ -610,10 +681,13 @@ function resolveSingleMove(agent, game, events) {
     agent.x = nx
     agent.y = ny
   }
+
+  // Re-add to occupied at new position
+  occupied.add(`${agent.x},${agent.y}`)
 }
 
 // =========================================
-// Single-Agent Attack (No Simultaneous)
+// Attack Resolution (with Evasion + Damage Reduction)
 // =========================================
 
 function resolveSingleAttack(agent, game, events) {
@@ -626,17 +700,18 @@ function resolveSingleAttack(agent, game, events) {
     return
   }
 
-  // Ranged: require straight line (same row or column) and clear LOS
-  if (agent.weapon.range > 1) {
-    if (agent.x !== target.x && agent.y !== target.y) {
-      events.push({ type: 'attack_miss', slot: agent.slot, reason: 'not_in_line' })
-      return
-    }
-    if (!hasLineOfSight(agent, target, game.arena.terrain)) {
-      events.push({ type: 'attack_miss', slot: agent.slot, reason: 'blocked' })
-      agent.cooldown = agent.weapon.cooldown
-      return
-    }
+  // Ranged: minimum distance 2
+  if (agent.weapon.range > 1 && dist < 2) {
+    events.push({ type: 'attack_miss', slot: agent.slot, reason: 'too_close' })
+    return
+  }
+
+  // Evasion check (armor-based)
+  if (target.armor.evasion > 0 && Math.random() < target.armor.evasion) {
+    events.push({ type: 'evade', from_slot: agent.slot, to_slot: target.slot })
+    // Still consume the attack turn
+    agent.consecutiveHits = 0
+    return
   }
 
   // Roll damage
@@ -662,6 +737,14 @@ function resolveSingleAttack(agent, game, events) {
     damage = Math.floor(damage * (1 - config.stayDamageReduction))
   }
 
+  // Armor damage reduction
+  if (target.armor.dmgReduction > 0) {
+    damage = Math.floor(damage * (1 - target.armor.dmgReduction))
+  }
+
+  // Minimum 1 damage
+  damage = Math.max(1, damage)
+
   // Apply damage
   target.hp -= damage
   target.damageTaken += damage
@@ -685,7 +768,12 @@ function resolveSingleAttack(agent, game, events) {
     for (const other of game.agents) {
       if (!other.alive || other.slot === agent.slot || other.slot === target.slot) continue
       if (manhattanDist(target, other) <= agent.weapon.aoeRadius) {
-        const aoeDmg = Math.floor(damage * 0.5)
+        let aoeDmg = Math.floor(damage * 0.5)
+        // AOE also respects armor
+        if (other.armor.dmgReduction > 0) {
+          aoeDmg = Math.floor(aoeDmg * (1 - other.armor.dmgReduction))
+        }
+        aoeDmg = Math.max(1, aoeDmg)
         other.hp -= aoeDmg
         other.damageTaken += aoeDmg
         agent.damageDealt += aoeDmg
@@ -701,8 +789,7 @@ function resolveSingleAttack(agent, game, events) {
     }
   }
 
-  // Set cooldown
-  agent.cooldown = agent.weapon.cooldown
+  // Consecutive hits tracking
   agent.consecutiveHits = (agent.consecutiveHits || 0) + 1
 
   // Check kill
@@ -953,32 +1040,6 @@ function manhattanDist(a, b) {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y)
 }
 
-/**
- * Line-of-sight check for ranged attacks.
- * Requires attacker and target on same row or column.
- * Returns false if any wall(1) or bush(2) is between them.
- */
-function hasLineOfSight(attacker, target, terrain) {
-  if (attacker.x === target.x) {
-    // Same column — check vertical
-    const minY = Math.min(attacker.y, target.y) + 1
-    const maxY = Math.max(attacker.y, target.y)
-    for (let y = minY; y < maxY; y++) {
-      const t = getTerrain(terrain, attacker.x, y)
-      if (t === 1 || t === 2) return false
-    }
-  } else if (attacker.y === target.y) {
-    // Same row — check horizontal
-    const minX = Math.min(attacker.x, target.x) + 1
-    const maxX = Math.max(attacker.x, target.x)
-    for (let x = minX; x < maxX; x++) {
-      const t = getTerrain(terrain, x, attacker.y)
-      if (t === 1 || t === 2) return false
-    }
-  }
-  return true
-}
-
 function moveToward(agent, target, arena, occupied) {
   const dx = target.x - agent.x
   const dy = target.y - agent.y
@@ -1137,8 +1198,9 @@ function getAgentView(gameId, agentId) {
       y: me.y,
       personality: me.personality,
       weapon: me.weapon.slug,
-      weapon_speed: me.weapon.speed,
-      cooldown: me.cooldown,
+      atk_speed: me.effectiveAtkSpeed,
+      move_speed: me.effectiveMoveSpeed,
+      armor: me.armor.slug,
       score: me.score,
       alive: me.alive,
       buffs: me.buffs.map(b => ({ type: b.type, remaining: b.remaining })),
@@ -1155,8 +1217,9 @@ function getAgentView(gameId, agentId) {
         y: a.y,
         personality: a.personality,
         weapon: a.weapon.slug,
-        weapon_speed: a.weapon.speed,
-        cooldown: a.cooldown,
+        atk_speed: a.effectiveAtkSpeed,
+        move_speed: a.effectiveMoveSpeed,
+        armor: a.armor.slug,
         alive: a.alive
       })),
     powerups: state.powerups.map(p => ({ type: p.type, x: p.x, y: p.y })),

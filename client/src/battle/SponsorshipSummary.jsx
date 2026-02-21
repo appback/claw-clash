@@ -21,7 +21,7 @@ export default function SponsorshipSummary({ game }) {
                   Slot {entry.slot}
                 </span>
                 <span className="sponsorship-agent">
-                  {entry.agent_name || '-'}
+                  {entry.agent_name ? `${entry.agent_name} #${entry.agent_id?.slice(0, 8) || ''}` : '-'}
                 </span>
                 <span className="sponsorship-count">{sp.sponsor_count}x</span>
                 <div className="sponsorship-boosts">

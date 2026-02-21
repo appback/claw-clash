@@ -1199,12 +1199,21 @@ a:hover {
   z-index: 2;
 }
 
-/* Claw + weapon stacked container */
+/* Claw + weapon + armor stacked container */
 .agent-token-body {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.agent-token-armor {
+  position: absolute;
+  bottom: -2px;
+  left: -6px;
+  font-size: 0.7rem;
+  filter: drop-shadow(0 0 2px rgba(0,0,0,0.8));
+  line-height: 1;
 }
 
 .agent-token-face {
@@ -1275,6 +1284,18 @@ a:hover {
   0% { transform: scale(1); }
   30% { transform: scale(1.25); }
   100% { transform: scale(1); }
+}
+
+/* Evade animation — quick dodge */
+.agent-evading .agent-token-body {
+  animation: agent-evade 0.4s ease-out;
+}
+
+@keyframes agent-evade {
+  0% { transform: translateX(0); opacity: 1; }
+  25% { transform: translateX(-6px); opacity: 0.5; }
+  50% { transform: translateX(6px); opacity: 0.5; }
+  100% { transform: translateX(0); opacity: 1; }
 }
 
 /* Speech bubble above agent */
@@ -1452,6 +1473,8 @@ a:hover {
 .event-log-ring_damage .event-log-text { color: #ff4444; font-weight: 600; }
 .event-log-powerup_spawn .event-log-text { color: var(--accent); }
 .event-log-powerup_collect .event-log-text { color: var(--accent); }
+.event-log-evade .event-log-text { color: #7dd3fc; font-style: italic; }
+.event-log-bonus_attack .event-log-text { color: var(--warning); font-weight: 600; }
 
 /* ========================================
    Battle Replay
@@ -1527,6 +1550,14 @@ a:hover {
 .lobby-slot-weapon {
   font-size: 0.8125rem;
   color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lobby-slot-armor {
+  font-size: 0.75rem;
+  color: var(--text-muted);
 }
 
 .lobby-slot-waiting {
@@ -1636,6 +1667,11 @@ a:hover {
 
 .battle-result-weapon {
   font-size: 1rem;
+}
+
+.battle-result-armor {
+  font-size: 0.875rem;
+  opacity: 0.7;
 }
 
 .battle-result-stats {
@@ -2020,6 +2056,13 @@ a:hover {
 .stats-weapon {
   color: var(--text-secondary);
 }
+
+.stats-armor {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.stats-th-armor { min-width: 90px; }
 
 .stats-status-survived {
   color: var(--success);

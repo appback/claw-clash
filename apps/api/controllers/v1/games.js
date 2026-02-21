@@ -74,17 +74,21 @@ async function get(req, res, next) {
     const game = gameResult.rows[0]
     const revealIdentity = ['ended', 'archived'].includes(game.state)
 
-    // Get entries with weapon info
+    // Get entries with weapon + armor info
     const entries = await db.query(
       `SELECT ge.slot, ge.status, ge.final_rank, ge.total_score,
               ge.kills, ge.damage_dealt, ge.damage_taken, ge.survived_ticks,
               ge.bonus_hp, ge.bonus_damage,
               w.slug AS weapon_slug, w.name AS weapon_name, w.damage AS weapon_damage,
               w.range AS weapon_range,
+              ar.slug AS armor_slug, ar.name AS armor_name,
+              ar.dmg_reduction AS armor_dmg_reduction, ar.evasion AS armor_evasion,
+              ar.emoji AS armor_emoji,
               ${revealIdentity ? "ge.agent_id, ag.name AS agent_name, ag.meta," : ""}
               ge.created_at
        FROM game_entries ge
        JOIN weapons w ON w.id = ge.weapon_id
+       LEFT JOIN armors ar ON ar.id = ge.armor_id
        ${revealIdentity ? "JOIN agents ag ON ag.id = ge.agent_id" : ""}
        WHERE ge.game_id = $1
        ORDER BY ge.final_rank NULLS LAST, ge.slot`,
@@ -165,7 +169,8 @@ async function getState(req, res, next) {
       },
       agents: state.agents.map(a => ({
         slot: a.slot, hp: a.hp, maxHp: a.maxHp, x: a.x, y: a.y,
-        weapon: a.weapon.slug, weapon_speed: a.weapon.speed, alive: a.alive, score: a.score,
+        weapon: a.weapon.slug, alive: a.alive, score: a.score,
+        armor: a.armor ? a.armor.slug : 'no_armor',
         buffs: (a.buffs || []).map(b => b.type)
       })),
       powerups: (state.powerups || []).map(p => ({ type: p.type, x: p.x, y: p.y })),
@@ -201,10 +206,12 @@ async function replay(req, res, next) {
               ge.kills, ge.damage_dealt, ge.damage_taken, ge.survived_ticks,
               ge.bonus_hp, ge.bonus_damage,
               a.name AS agent_name, a.meta,
-              w.slug AS weapon_slug, w.name AS weapon_name
+              w.slug AS weapon_slug, w.name AS weapon_name,
+              ar.slug AS armor_slug, ar.name AS armor_name, ar.emoji AS armor_emoji
        FROM game_entries ge
        JOIN agents a ON a.id = ge.agent_id
        JOIN weapons w ON w.id = ge.weapon_id
+       LEFT JOIN armors ar ON ar.id = ge.armor_id
        WHERE ge.game_id = $1
        ORDER BY ge.final_rank NULLS LAST`,
       [id]
@@ -443,7 +450,7 @@ async function join(req, res, next) {
   try {
     const { id } = req.params
     const agent = req.agent
-    const { weapon } = req.body // weapon slug
+    const { weapon, armor } = req.body // weapon slug, armor slug
 
     const gameResult = await db.query(
       'SELECT g.*, a.max_players FROM games g JOIN arenas a ON a.id = g.arena_id WHERE g.id = $1',
@@ -466,6 +473,23 @@ async function join(req, res, next) {
       throw new NotFoundError(`Weapon '${weaponSlug}' not found`)
     }
     const weaponRow = weaponResult.rows[0]
+
+    // Get armor
+    const armorSlug = armor || 'no_armor'
+    const armorResult = await db.query(
+      'SELECT * FROM armors WHERE slug = $1 AND is_active = true',
+      [armorSlug]
+    )
+    if (armorResult.rows.length === 0) {
+      throw new NotFoundError(`Armor '${armorSlug}' not found`)
+    }
+    const armorRow = armorResult.rows[0]
+
+    // Weapon-armor compatibility check
+    const allowedArmors = weaponRow.allowed_armors || ['heavy', 'light', 'cloth', 'none']
+    if (!allowedArmors.includes(armorRow.category)) {
+      throw new BadRequestError(`Weapon '${weaponSlug}' cannot be used with armor category '${armorRow.category}'. Allowed: ${allowedArmors.join(', ')}`)
+    }
 
     // Check max entries
     const entries = await db.query(
@@ -505,9 +529,9 @@ async function join(req, res, next) {
     const defaultStrategy = { mode: 'balanced', target_priority: 'nearest', flee_threshold: config.defaultFleeThreshold || 15 }
 
     await db.query(
-      `INSERT INTO game_entries (game_id, agent_id, slot, weapon_id, initial_strategy, entry_fee_paid)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, agent.id, slot, weaponRow.id, JSON.stringify(defaultStrategy), game.entry_fee]
+      `INSERT INTO game_entries (game_id, agent_id, slot, weapon_id, armor_id, initial_strategy, entry_fee_paid)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [id, agent.id, slot, weaponRow.id, armorRow.id, JSON.stringify(defaultStrategy), game.entry_fee]
     )
 
     // Update prize pool
@@ -546,6 +570,7 @@ async function join(req, res, next) {
       game_id: id,
       slot,
       weapon: weaponSlug,
+      armor: armorSlug,
       strategy: defaultStrategy,
       message: 'Successfully joined the game'
     })
@@ -857,9 +882,13 @@ async function update(req, res, next) {
                 w.damage_min AS weapon_damage_min, w.damage_max AS weapon_damage_max,
                 w.range AS weapon_range,
                 w.cooldown AS weapon_cooldown, w.aoe_radius AS weapon_aoe_radius, w.skill AS weapon_skill,
-                w.speed AS weapon_speed
+                w.atk_speed AS weapon_atk_speed, w.move_speed AS weapon_move_speed,
+                ar.slug AS armor_slug, ar.dmg_reduction AS armor_dmg_reduction,
+                ar.evasion AS armor_evasion, ar.move_mod AS armor_move_mod,
+                ar.atk_mod AS armor_atk_mod, ar.emoji AS armor_emoji
          FROM game_entries ge
          JOIN weapons w ON w.id = ge.weapon_id
+         LEFT JOIN armors ar ON ar.id = ge.armor_id
          WHERE ge.game_id = $1
          ORDER BY ge.slot`,
         [id]
@@ -908,10 +937,26 @@ async function listArenas(req, res, next) {
 async function listWeapons(req, res, next) {
   try {
     const result = await db.query(
-      `SELECT id, slug, name, category, damage, range, cooldown, aoe_radius, skill, description, is_active
+      `SELECT id, slug, name, category, damage, damage_min, damage_max, range, cooldown,
+              aoe_radius, skill, atk_speed, move_speed, allowed_armors, description, is_active
        FROM weapons WHERE is_active = true ORDER BY name`
     )
     res.json({ weapons: result.rows })
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * GET /api/v1/armors - List armors (public)
+ */
+async function listArmors(req, res, next) {
+  try {
+    const result = await db.query(
+      `SELECT id, slug, name, category, dmg_reduction, evasion, move_mod, atk_mod, emoji, description
+       FROM armors WHERE is_active = true ORDER BY name`
+    )
+    res.json({ armors: result.rows })
   } catch (err) {
     next(err)
   }
@@ -1151,5 +1196,5 @@ module.exports = {
   sponsor, getSponsorships,
   placeBet, getBetCounts, getUserProfile,
   create, update,
-  listArenas, listWeapons, createArena, createWeapon
+  listArenas, listWeapons, listArmors, createArena, createWeapon
 }

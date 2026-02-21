@@ -118,6 +118,7 @@ router.get('/queue/info', queueController.info)
 // ==========================================
 router.get('/arenas', gamesController.listArenas)
 router.get('/weapons', gamesController.listWeapons)
+router.get('/armors', gamesController.listArmors)
 
 // ==========================================
 // Predictions (optional auth for anonymous, JWT for staked)

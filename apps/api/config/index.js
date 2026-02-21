@@ -14,11 +14,14 @@ module.exports = {
   racingDurationMin: 15,
   autoRaceIntervalHours: 2,
 
-  // Battle defaults (Phase 2.5 — Turn-based sub-tick system)
+  // Battle defaults (Phase 3 — Dual accumulator round system)
   defaultMaxTicks: 1500,      // 300s at 200ms/tick
   tickIntervalMs: 200,        // 0.2 second sub-ticks
   startingHp: 100,
-  turnThreshold: 10,          // initiative threshold to take a turn
+  actionRoundTicks: 5,        // 5 ticks = 1 second = 1 action round
+  actionThreshold: 100,       // accumulator threshold for an action
+  speedClampMin: 80,          // min effective speed
+  speedClampMax: 120,         // max effective speed
   passiveTickInterval: 5,     // apply terrain/ring/buffs every 5 ticks (=1s)
   strategyCooldownTicks: 50,  // 10s at 200ms/tick
   maxStrategyChanges: 30,

@@ -18,17 +18,39 @@ async function broadcastQueueCount(req) {
 async function join(req, res, next) {
   try {
     const agent = req.agent
-    const { weapon, chat_pool, strategy } = req.body
+    const { weapon, armor, chat_pool, strategy } = req.body
 
     // Validate weapon (optional — null means random assignment by matchmaker)
     const weaponSlug = weapon || null
     if (weaponSlug) {
       const weaponResult = await db.query(
-        'SELECT id, slug FROM weapons WHERE slug = $1 AND is_active = true',
+        'SELECT id, slug, allowed_armors FROM weapons WHERE slug = $1 AND is_active = true',
         [weaponSlug]
       )
       if (weaponResult.rows.length === 0) {
         throw new NotFoundError(`Weapon '${weaponSlug}' not found`)
+      }
+    }
+
+    // Validate armor (optional — null means random assignment by matchmaker)
+    const armorSlug = armor || null
+    if (armorSlug) {
+      const armorResult = await db.query(
+        'SELECT id, slug, category FROM armors WHERE slug = $1 AND is_active = true',
+        [armorSlug]
+      )
+      if (armorResult.rows.length === 0) {
+        throw new NotFoundError(`Armor '${armorSlug}' not found`)
+      }
+      // Compatibility check if both weapon and armor specified
+      if (weaponSlug) {
+        const wRow = await db.query('SELECT allowed_armors FROM weapons WHERE slug = $1', [weaponSlug])
+        if (wRow.rows.length > 0) {
+          const allowed = wRow.rows[0].allowed_armors || ['heavy', 'light', 'cloth', 'none']
+          if (!allowed.includes(armorResult.rows[0].category)) {
+            throw new BadRequestError(`Weapon '${weaponSlug}' cannot use armor category '${armorResult.rows[0].category}'`)
+          }
+        }
       }
     }
 
@@ -129,29 +151,51 @@ async function join(req, res, next) {
 
       if (slot !== null) {
         // Resolve weapon
-        let weaponId
+        let weaponId, weaponAllowed
         if (weaponSlug) {
           const w = await db.query(
-            'SELECT id FROM weapons WHERE slug = $1 AND is_active = true',
+            'SELECT id, allowed_armors FROM weapons WHERE slug = $1 AND is_active = true',
             [weaponSlug]
           )
-          weaponId = w.rows.length > 0 ? w.rows[0].id : null
+          if (w.rows.length > 0) {
+            weaponId = w.rows[0].id
+            weaponAllowed = w.rows[0].allowed_armors
+          }
         }
         if (!weaponId) {
-          const allWeapons = await db.query('SELECT id FROM weapons WHERE is_active = true')
+          const allWeapons = await db.query('SELECT id, allowed_armors FROM weapons WHERE is_active = true')
           if (allWeapons.rows.length > 0) {
-            weaponId = allWeapons.rows[Math.floor(Math.random() * allWeapons.rows.length)].id
+            const pick = allWeapons.rows[Math.floor(Math.random() * allWeapons.rows.length)]
+            weaponId = pick.id
+            weaponAllowed = pick.allowed_armors
           } else {
-            weaponId = (await db.query("SELECT id FROM weapons WHERE slug = 'sword'")).rows[0].id
+            const fallback = await db.query("SELECT id, allowed_armors FROM weapons WHERE slug = 'sword'")
+            weaponId = fallback.rows[0].id
+            weaponAllowed = fallback.rows[0].allowed_armors
+          }
+        }
+
+        // Resolve armor
+        let armorId = null
+        const allArmors = await db.query('SELECT id, slug, category FROM armors WHERE is_active = true')
+        const allowed = weaponAllowed || ['heavy', 'light', 'cloth', 'none']
+        if (armorSlug) {
+          const ar = allArmors.rows.find(a => a.slug === armorSlug)
+          if (ar && allowed.includes(ar.category)) armorId = ar.id
+        }
+        if (!armorId) {
+          const compatible = allArmors.rows.filter(a => allowed.includes(a.category))
+          if (compatible.length > 0) {
+            armorId = compatible[Math.floor(Math.random() * compatible.length)].id
           }
         }
 
         const strat = validatedStrategy || { mode: 'balanced', target_priority: 'nearest', flee_threshold: config.defaultFleeThreshold }
 
         await db.query(
-          `INSERT INTO game_entries (game_id, agent_id, slot, weapon_id, initial_strategy)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [game.id, agent.id, slot, weaponId, JSON.stringify(strat)]
+          `INSERT INTO game_entries (game_id, agent_id, slot, weapon_id, armor_id, initial_strategy)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [game.id, agent.id, slot, weaponId, armorId, JSON.stringify(strat)]
         )
 
         if (validatedPool) {
@@ -184,10 +228,10 @@ async function join(req, res, next) {
 
     // No lobby available — add to queue
     const result = await db.query(
-      `INSERT INTO battle_queue (agent_id, weapon_slug, chat_pool, strategy)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, weapon_slug, queued_at`,
-      [agent.id, weaponSlug, validatedPool ? JSON.stringify(validatedPool) : null, validatedStrategy ? JSON.stringify(validatedStrategy) : null]
+      `INSERT INTO battle_queue (agent_id, weapon_slug, armor_slug, chat_pool, strategy)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, weapon_slug, armor_slug, queued_at`,
+      [agent.id, weaponSlug, armorSlug, validatedPool ? JSON.stringify(validatedPool) : null, validatedStrategy ? JSON.stringify(validatedStrategy) : null]
     )
 
     await broadcastQueueCount(req)

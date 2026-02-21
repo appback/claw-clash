@@ -65,7 +65,7 @@ async function testGame(req, res, next) {
       await db.query('DELETE FROM battle_queue WHERE agent_id = $1', [botId])
     }
 
-    // 3. Get arena and weapons
+    // 3. Get arena, weapons and armors
     const arena = await db.query(
       "SELECT * FROM arenas WHERE is_active = true ORDER BY slug = 'the_pit' DESC LIMIT 1"
     )
@@ -73,10 +73,12 @@ async function testGame(req, res, next) {
       return res.status(500).json({ error: 'No active arena' })
     }
 
-    const weapons = await db.query('SELECT id, slug FROM weapons WHERE is_active = true')
+    const weapons = await db.query('SELECT id, slug, allowed_armors FROM weapons WHERE is_active = true')
     if (weapons.rows.length === 0) {
       return res.status(500).json({ error: 'No active weapons' })
     }
+
+    const armors = await db.query('SELECT id, slug, category FROM armors WHERE is_active = true')
 
     // 4. Create game
     const now = Date.now()
@@ -99,15 +101,22 @@ async function testGame(req, res, next) {
     )
     const gameId = gameResult.rows[0].id
 
-    // 5. Assign bots to slots with varied weapons
+    // 5. Assign bots to slots with varied weapons + random compatible armor
     for (let i = 0; i < botIds.length; i++) {
-      const weaponId = weapons.rows[i % weapons.rows.length].id
+      const weapon = weapons.rows[i % weapons.rows.length]
       const strategy = STRATEGIES[i % STRATEGIES.length]
 
+      // Pick random compatible armor
+      const allowedCategories = weapon.allowed_armors || ['heavy', 'light', 'cloth', 'none']
+      const compatibleArmors = armors.rows.filter(a => allowedCategories.includes(a.category))
+      const armorRow = compatibleArmors.length > 0
+        ? compatibleArmors[Math.floor(Math.random() * compatibleArmors.length)]
+        : armors.rows.find(a => a.slug === 'no_armor') || armors.rows[0]
+
       await db.query(
-        `INSERT INTO game_entries (game_id, agent_id, slot, weapon_id, initial_strategy)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [gameId, botIds[i], i, weaponId, JSON.stringify(strategy)]
+        `INSERT INTO game_entries (game_id, agent_id, slot, weapon_id, armor_id, initial_strategy)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [gameId, botIds[i], i, weapon.id, armorRow ? armorRow.id : null, JSON.stringify(strategy)]
       )
     }
 
@@ -234,8 +243,11 @@ async function addBot(req, res, next) {
     const count = Math.min(Math.max(parseInt(req.body.count) || 1, 1), 8)
     const results = []
 
+    // Shuffle bot names to avoid duplicates
+    const shuffled = [...BOT_NAMES].sort(() => Math.random() - 0.5)
+
     for (let n = 0; n < count; n++) {
-      const name = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)]
+      const name = shuffled[n % shuffled.length]
       const personality = PERSONALITIES[Math.floor(Math.random() * PERSONALITIES.length)]
       const strategy = STRATEGIES[Math.floor(Math.random() * STRATEGIES.length)]
       const chatPool = CHAT_POOLS[Math.floor(Math.random() * CHAT_POOLS.length)]
@@ -245,7 +257,6 @@ async function addBot(req, res, next) {
       const existing = await db.query('SELECT id FROM agents WHERE name = $1', [name])
       if (existing.rows.length > 0) {
         botId = existing.rows[0].id
-        // Update personality on existing bot for variety
         await db.query('UPDATE agents SET personality = $1 WHERE id = $2', [personality, botId])
       } else {
         const token = generateAgentToken()
@@ -276,17 +287,28 @@ async function addBot(req, res, next) {
         continue
       }
 
-      // Random weapon
-      const weapons = await db.query('SELECT slug FROM weapons WHERE is_active = true')
-      const weaponSlug = weapons.rows.length > 0
-        ? weapons.rows[Math.floor(Math.random() * weapons.rows.length)].slug
+      // Random weapon + compatible armor
+      const weapons = await db.query('SELECT slug, allowed_armors FROM weapons WHERE is_active = true')
+      const allArmors = await db.query('SELECT slug, category FROM armors WHERE is_active = true')
+      const weaponRow = weapons.rows.length > 0
+        ? weapons.rows[Math.floor(Math.random() * weapons.rows.length)]
         : null
+      const weaponSlug = weaponRow ? weaponRow.slug : null
 
-      // Add to queue with chat_pool
+      let armorSlug = 'no_armor'
+      if (weaponRow && allArmors.rows.length > 0) {
+        const allowed = weaponRow.allowed_armors || ['heavy', 'light', 'cloth', 'none']
+        const compatible = allArmors.rows.filter(a => allowed.includes(a.category))
+        if (compatible.length > 0) {
+          armorSlug = compatible[Math.floor(Math.random() * compatible.length)].slug
+        }
+      }
+
+      // Add to queue with chat_pool + armor
       await db.query(
-        `INSERT INTO battle_queue (agent_id, weapon_slug, chat_pool, strategy)
-         VALUES ($1, $2, $3, $4)`,
-        [botId, weaponSlug, JSON.stringify(chatPool), JSON.stringify(strategy)]
+        `INSERT INTO battle_queue (agent_id, weapon_slug, armor_slug, chat_pool, strategy)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [botId, weaponSlug, armorSlug, JSON.stringify(chatPool), JSON.stringify(strategy)]
       )
 
       results.push({ status: 'queued', bot: name, weapon: weaponSlug, personality })

@@ -36,7 +36,7 @@ async function fillExistingLobbies() {
 
   // Get eligible queue agents
   const queue = await db.query(
-    `SELECT bq.agent_id, bq.weapon_slug, bq.chat_pool, bq.strategy
+    `SELECT bq.agent_id, bq.weapon_slug, bq.armor_slug, bq.chat_pool, bq.strategy
      FROM battle_queue bq
      WHERE (bq.cooldown_until IS NULL OR bq.cooldown_until < now())
      ORDER BY bq.queued_at ASC`
@@ -67,7 +67,10 @@ async function fillExistingLobbies() {
       await client.query('BEGIN')
 
       const allWeapons = await client.query(
-        'SELECT id, slug FROM weapons WHERE is_active = true'
+        'SELECT id, slug, allowed_armors FROM weapons WHERE is_active = true'
+      )
+      const allArmors = await client.query(
+        'SELECT id, slug, category FROM armors WHERE is_active = true'
       )
 
       for (let i = 0; i < toAssign.length; i++) {
@@ -75,28 +78,45 @@ async function fillExistingLobbies() {
         const slot = availableSlots[i]
 
         // Weapon assignment (same logic as createQueueGame)
-        let weaponId
+        let weaponId, weaponRow
         if (agent.weapon_slug) {
-          const weapon = await client.query(
-            'SELECT id FROM weapons WHERE slug = $1 AND is_active = true',
-            [agent.weapon_slug]
-          )
-          weaponId = weapon.rows.length > 0 ? weapon.rows[0].id : null
+          weaponRow = allWeapons.rows.find(w => w.slug === agent.weapon_slug)
+          weaponId = weaponRow ? weaponRow.id : null
         }
         if (!weaponId && allWeapons.rows.length > 0) {
-          weaponId = allWeapons.rows[Math.floor(Math.random() * allWeapons.rows.length)].id
+          weaponRow = allWeapons.rows[Math.floor(Math.random() * allWeapons.rows.length)]
+          weaponId = weaponRow.id
         }
         if (!weaponId) {
-          weaponId = (await client.query("SELECT id FROM weapons WHERE slug = 'sword'")).rows[0].id
+          weaponRow = allWeapons.rows.find(w => w.slug === 'sword') || allWeapons.rows[0]
+          weaponId = weaponRow.id
+        }
+
+        // Armor assignment
+        let armorId = null
+        if (agent.armor_slug && agent.armor_slug !== 'no_armor') {
+          const ar = allArmors.rows.find(a => a.slug === agent.armor_slug)
+          if (ar) {
+            const allowed = (weaponRow && weaponRow.allowed_armors) || ['heavy', 'light', 'cloth', 'none']
+            if (allowed.includes(ar.category)) armorId = ar.id
+          }
+        }
+        if (!armorId) {
+          // Assign random compatible armor
+          const allowed = (weaponRow && weaponRow.allowed_armors) || ['heavy', 'light', 'cloth', 'none']
+          const compatible = allArmors.rows.filter(a => allowed.includes(a.category))
+          if (compatible.length > 0) {
+            armorId = compatible[Math.floor(Math.random() * compatible.length)].id
+          }
         }
 
         const defaultStrategy = { mode: 'balanced', target_priority: 'nearest', flee_threshold: config.defaultFleeThreshold }
         const strategy = agent.strategy || defaultStrategy
 
         await client.query(
-          `INSERT INTO game_entries (game_id, agent_id, slot, weapon_id, initial_strategy)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [game.id, agent.agent_id, slot, weaponId, JSON.stringify(strategy)]
+          `INSERT INTO game_entries (game_id, agent_id, slot, weapon_id, armor_id, initial_strategy)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [game.id, agent.agent_id, slot, weaponId, armorId, JSON.stringify(strategy)]
         )
 
         // Transfer chat pool
@@ -151,7 +171,7 @@ async function processQueue() {
 
   // Get eligible agents (not in cooldown)
   const queue = await db.query(
-    `SELECT bq.id, bq.agent_id, bq.weapon_slug, bq.queued_at,
+    `SELECT bq.id, bq.agent_id, bq.weapon_slug, bq.armor_slug, bq.queued_at,
             bq.chat_pool, bq.strategy,
             a.name AS agent_name, a.meta
      FROM battle_queue bq
@@ -324,9 +344,12 @@ async function createQueueGame(agents) {
     const slots = Array.from({ length: agents.length }, (_, i) => i)
     shuffleArray(slots)
 
-    // Fetch all active weapons for random assignment
+    // Fetch all active weapons and armors for assignment
     const allWeapons = await client.query(
-      'SELECT id, slug FROM weapons WHERE is_active = true'
+      'SELECT id, slug, allowed_armors FROM weapons WHERE is_active = true'
+    )
+    const allArmors = await client.query(
+      'SELECT id, slug, category FROM armors WHERE is_active = true'
     )
 
     for (let i = 0; i < agents.length; i++) {
@@ -334,29 +357,44 @@ async function createQueueGame(agents) {
       const slot = slots[i]
 
       // Get weapon: use requested slug, or assign random
-      let weaponId
+      let weaponId, weaponRow
       if (agent.weapon_slug) {
-        const weapon = await client.query(
-          'SELECT id FROM weapons WHERE slug = $1 AND is_active = true',
-          [agent.weapon_slug]
-        )
-        weaponId = weapon.rows.length > 0 ? weapon.rows[0].id : null
+        weaponRow = allWeapons.rows.find(w => w.slug === agent.weapon_slug)
+        weaponId = weaponRow ? weaponRow.id : null
       }
       if (!weaponId && allWeapons.rows.length > 0) {
-        const randomWeapon = allWeapons.rows[Math.floor(Math.random() * allWeapons.rows.length)]
-        weaponId = randomWeapon.id
+        weaponRow = allWeapons.rows[Math.floor(Math.random() * allWeapons.rows.length)]
+        weaponId = weaponRow.id
       }
       if (!weaponId) {
-        weaponId = (await client.query("SELECT id FROM weapons WHERE slug = 'sword'")).rows[0].id
+        weaponRow = allWeapons.rows.find(w => w.slug === 'sword') || allWeapons.rows[0]
+        weaponId = weaponRow.id
+      }
+
+      // Get armor: use requested slug (if compatible), or assign random compatible
+      let armorId = null
+      if (agent.armor_slug && agent.armor_slug !== 'no_armor') {
+        const ar = allArmors.rows.find(a => a.slug === agent.armor_slug)
+        if (ar) {
+          const allowed = (weaponRow && weaponRow.allowed_armors) || ['heavy', 'light', 'cloth', 'none']
+          if (allowed.includes(ar.category)) armorId = ar.id
+        }
+      }
+      if (!armorId) {
+        const allowed = (weaponRow && weaponRow.allowed_armors) || ['heavy', 'light', 'cloth', 'none']
+        const compatible = allArmors.rows.filter(a => allowed.includes(a.category))
+        if (compatible.length > 0) {
+          armorId = compatible[Math.floor(Math.random() * compatible.length)].id
+        }
       }
 
       const defaultStrategy = { mode: 'balanced', target_priority: 'nearest', flee_threshold: config.defaultFleeThreshold }
       const strategy = agent.strategy || defaultStrategy
 
       await client.query(
-        `INSERT INTO game_entries (game_id, agent_id, slot, weapon_id, initial_strategy)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [gameId, agent.agent_id, slot, weaponId, JSON.stringify(strategy)]
+        `INSERT INTO game_entries (game_id, agent_id, slot, weapon_id, armor_id, initial_strategy)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [gameId, agent.agent_id, slot, weaponId, armorId, JSON.stringify(strategy)]
       )
 
       // Transfer chat_pool from queue to agent_chat_pool

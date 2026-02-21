@@ -18,6 +18,7 @@ const POWERUP_ICONS = {
 export default function BattleArena({ state, gridWidth, gridHeight, entries, chatMessages }) {
   const [hitSlots, setHitSlots] = useState(new Set())
   const [attackSlots, setAttackSlots] = useState(new Set())
+  const [evadeSlots, setEvadeSlots] = useState(new Set())
   const [slashEffects, setSlashEffects] = useState([])
   const [eventLog, setEventLog] = useState([])
   const [bubbles, setBubbles] = useState({}) // slot -> message
@@ -35,24 +36,27 @@ export default function BattleArena({ state, gridWidth, gridHeight, entries, cha
 
   const cellSize = 56
 
-  // Build weapon map from entries (replay) or agent data
-  const weaponMap = useMemo(() => {
-    const map = {}
+  // Build weapon + armor maps from entries (replay) or agent data
+  const { weaponMap, armorMap } = useMemo(() => {
+    const wMap = {}
+    const aMap = {}
     if (entries && entries.length > 0) {
       for (const e of entries) {
-        map[e.slot] = e.weapon_slug
+        wMap[e.slot] = e.weapon_slug
+        aMap[e.slot] = e.armor_slug
       }
     }
-    return map
+    return { weaponMap: wMap, armorMap: aMap }
   }, [entries])
 
-  // Enrich agents with weapon info from entries if not already present
+  // Enrich agents with weapon/armor info from entries if not already present
   const enrichedAgents = useMemo(() => {
     return agents.map(a => ({
       ...a,
-      weapon: a.weapon || weaponMap[a.slot] || 'sword'
+      weapon: a.weapon || weaponMap[a.slot] || 'sword',
+      armor: a.armor || armorMap[a.slot] || 'no_armor'
     }))
-  }, [agents, weaponMap])
+  }, [agents, weaponMap, armorMap])
 
   const grid = useMemo(() => {
     const cells = []
@@ -82,6 +86,7 @@ export default function BattleArena({ state, gridWidth, gridHeight, entries, cha
 
     const newHits = new Set()
     const newAttacks = new Set()
+    const newEvades = new Set()
     const newSlashes = []
 
     // Append events to cumulative log
@@ -117,17 +122,22 @@ export default function BattleArena({ state, gridWidth, gridHeight, entries, cha
           })
         }
       }
+      if (e.type === 'evade') {
+        newEvades.add(e.to_slot)
+      }
     }
 
     setHitSlots(newHits)
     setAttackSlots(newAttacks)
+    setEvadeSlots(newEvades)
     setSlashEffects(newSlashes)
 
     // Clear animations after duration
-    if (newHits.size > 0 || newAttacks.size > 0) {
+    if (newHits.size > 0 || newAttacks.size > 0 || newEvades.size > 0) {
       const timer = setTimeout(() => {
         setHitSlots(new Set())
         setAttackSlots(new Set())
+        setEvadeSlots(new Set())
         setSlashEffects([])
       }, 400)
       return () => clearTimeout(timer)
@@ -282,6 +292,7 @@ export default function BattleArena({ state, gridWidth, gridHeight, entries, cha
             cellSize={cellSize}
             isHit={hitSlots.has(agent.slot)}
             isAttacking={attackSlots.has(agent.slot)}
+            isEvading={evadeSlots.has(agent.slot)}
             bubble={bubbles[agent.slot] || null}
           />
         ))}
@@ -352,6 +363,10 @@ function formatEvent(e) {
       return `\uD83C\uDF81 #${e.slot} picked up ${e.powerup}`
     case 'powerup_destroyed':
       return `\uD83D\uDCA8 ${e.powerup} destroyed by ring`
+    case 'evade':
+      return `\uD83C\uDF00 #${e.to_slot} evaded attack from #${e.from_slot}!`
+    case 'bonus_attack':
+      return `\u26A1 #${e.slot} bonus attack!`
     case 'chat':
       return `\uD83D\uDCAC #${e.slot}: "${e.message}"`
     default:

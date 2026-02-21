@@ -18,17 +18,26 @@ const WEAPON_EMOJI = {
   lance: '\uD83D\uDD31'
 }
 
-export default function AgentToken({ agent, cellSize, isHit, isAttacking, bubble }) {
+const ARMOR_EMOJI = {
+  iron_plate: '\uD83D\uDEE1\uFE0F',
+  leather: '\uD83E\uDDBA',
+  cloth_cape: '\uD83E\uDDE3',
+  no_armor: ''
+}
+
+export default function AgentToken({ agent, cellSize, isHit, isAttacking, isEvading, bubble }) {
   if (!agent.alive) return null
 
   const hpPercent = Math.max(0, (agent.hp / agent.maxHp) * 100)
   const color = SLOT_COLORS[agent.slot % SLOT_COLORS.length]
   const weapon = WEAPON_EMOJI[agent.weapon] || '\u2694\uFE0F'
+  const armor = ARMOR_EMOJI[agent.armor] || ''
 
   const classes = [
     'agent-token',
     isHit ? 'agent-hit' : '',
-    isAttacking ? 'agent-attacking' : ''
+    isAttacking ? 'agent-attacking' : '',
+    isEvading ? 'agent-evading' : ''
   ].filter(Boolean).join(' ')
 
   return (
@@ -41,12 +50,13 @@ export default function AgentToken({ agent, cellSize, isHit, isAttacking, bubble
         height: cellSize,
         '--agent-color': color
       }}
-      title={`Slot ${agent.slot} | HP: ${agent.hp}/${agent.maxHp} | ${agent.weapon} | Score: ${agent.score}`}
+      title={`Slot ${agent.slot} | HP: ${agent.hp}/${agent.maxHp} | ${agent.weapon} | ${agent.armor || 'no armor'} | Score: ${agent.score}`}
     >
       {bubble && (
         <div className="speech-bubble">{bubble}</div>
       )}
       <div className="agent-token-body">
+        {armor && <div className="agent-token-armor">{armor}</div>}
         <AgentFace className="agent-token-face" />
         <div className="agent-token-weapon">{weapon}</div>
       </div>
@@ -64,4 +74,4 @@ export default function AgentToken({ agent, cellSize, isHit, isAttacking, bubble
   )
 }
 
-export { SLOT_COLORS, WEAPON_EMOJI }
+export { SLOT_COLORS, WEAPON_EMOJI, ARMOR_EMOJI }
