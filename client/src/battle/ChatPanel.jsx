@@ -8,6 +8,7 @@ export default function ChatPanel({ gameId, gameState }) {
   const [sending, setSending] = useState(false)
   const scrollRef = useRef(null)
   const seenIdsRef = useRef(new Set())
+  const initialLoadRef = useRef(true)
 
   const isActive = ['lobby', 'betting', 'battle'].includes(gameState)
   const isLoggedIn = !!localStorage.getItem('user_token')
@@ -21,6 +22,7 @@ export default function ChatPanel({ gameId, gameState }) {
         const msgs = res.data.messages || []
         setMessages(msgs.slice(-200))
         seenIdsRef.current = new Set(msgs.map(m => m.id))
+        initialLoadRef.current = true
       })
       .catch(() => {})
   }, [gameId])
@@ -42,11 +44,15 @@ export default function ChatPanel({ gameId, gameState }) {
   // Auto scroll only when user is already near bottom
   useEffect(() => {
     const el = scrollRef.current
-    if (el) {
-      const isNearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 50
-      if (isNearBottom) {
-        el.scrollTop = el.scrollHeight
-      }
+    if (!el) return
+    if (initialLoadRef.current) {
+      el.scrollTop = el.scrollHeight
+      initialLoadRef.current = false
+      return
+    }
+    const isNearBottom = el.scrollTop + el.clientHeight >= el.scrollHeight - 50
+    if (isNearBottom) {
+      el.scrollTop = el.scrollHeight
     }
   }, [messages])
 

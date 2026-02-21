@@ -21,7 +21,6 @@ export default function BattleArena({ state, gridWidth, gridHeight, entries }) {
   const [slashEffects, setSlashEffects] = useState([])
   const [eventLog, setEventLog] = useState([])
   const prevTick = useRef(null)
-  const logEndRef = useRef(null)
   const logContainerRef = useRef(null)
 
   if (!state) {
@@ -144,10 +143,10 @@ export default function BattleArena({ state, gridWidth, gridHeight, entries }) {
   // Auto-scroll event log only when user is already near bottom
   useEffect(() => {
     const container = logContainerRef.current
-    if (container && logEndRef.current) {
+    if (container) {
       const isNearBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 50
       if (isNearBottom) {
-        logEndRef.current.scrollIntoView({ behavior: 'smooth' })
+        container.scrollTop = container.scrollHeight
       }
     }
   }, [eventLog.length])
@@ -258,7 +257,6 @@ export default function BattleArena({ state, gridWidth, gridHeight, entries }) {
               </div>
             ))
           )}
-          <div ref={logEndRef} />
         </div>
       </div>
     </div>
