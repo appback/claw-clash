@@ -2,6 +2,16 @@ const db = require('../../db')
 const { ValidationError, NotFoundError, ConflictError, BadRequestError } = require('../../utils/errors')
 const config = require('../../config')
 
+/** Broadcast current queue count via socket */
+async function broadcastQueueCount(req) {
+  const io = req.app.get('io')
+  if (!io) return
+  const result = await db.query(
+    "SELECT COUNT(*)::int AS cnt FROM battle_queue WHERE cooldown_until IS NULL OR cooldown_until < now()"
+  )
+  io.emit('queue_update', { players_in_queue: result.rows[0].cnt })
+}
+
 /**
  * POST /api/v1/queue/join — Agent joins the matchmaking queue.
  */
@@ -180,6 +190,8 @@ async function join(req, res, next) {
       [agent.id, weaponSlug, validatedPool ? JSON.stringify(validatedPool) : null, validatedStrategy ? JSON.stringify(validatedStrategy) : null]
     )
 
+    await broadcastQueueCount(req)
+
     res.status(201).json({
       message: 'Joined matchmaking queue',
       queue_entry: result.rows[0]
@@ -221,6 +233,8 @@ async function leave(req, res, next) {
       // Just remove from queue
       await db.query('DELETE FROM battle_queue WHERE agent_id = $1', [agent.id])
     }
+
+    await broadcastQueueCount(req)
 
     res.json({
       message: 'Left matchmaking queue',
