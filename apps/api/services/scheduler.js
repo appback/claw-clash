@@ -47,13 +47,29 @@ function startScheduler(socketIO) {
     }
   })
 
-  // === Phase 2: Game transitions (every 30 seconds) ===
-  console.log('[Scheduler] Starting game automation (every 30 seconds)')
+  // === Phase 2: Game transitions (every 30 seconds, safety net) ===
+  console.log('[Scheduler] Starting game automation (every 30 seconds, safety net)')
   cron.schedule('*/30 * * * * *', async () => {
     try {
       await processGameTransitions()
     } catch (err) {
       console.error('[Scheduler] Error in game transition:', err)
+    }
+  })
+
+  // Auto-chat during lobby and betting phases (every 20 seconds)
+  console.log('[Scheduler] Lobby/betting auto-chat (every 20 seconds)')
+  cron.schedule('0,20,40 * * * * *', async () => {
+    try {
+      // Get all games in lobby or betting state
+      const games = await db.query(
+        "SELECT id FROM games WHERE state IN ('lobby', 'betting')"
+      )
+      for (const game of games.rows) {
+        await chatPoolService.triggerAutoChat(game.id, 'battle_start')
+      }
+    } catch (err) {
+      console.error('[Scheduler] Error in auto-chat:', err)
     }
   })
 

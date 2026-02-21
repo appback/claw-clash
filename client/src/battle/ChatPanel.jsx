@@ -80,8 +80,9 @@ export default function ChatPanel({ gameId, gameState }) {
             <div key={msg.id} className={'chat-msg chat-msg-' + msg.msg_type}>
               <span className="chat-msg-sender">
                 {msg.msg_type === 'system' ? '[System]'
-                  : msg.msg_type === 'ai_strategy' ? `[Slot ${msg.slot} \u2694\uFE0F]`
-                  : '[Spectator]'}
+                  : msg.msg_type === 'human_chat' ? '[Spectator]'
+                  : msg.slot != null ? `[Slot ${msg.slot}]`
+                  : '[Unknown]'}
               </span>
               <span className="chat-msg-text">{msg.message}</span>
             </div>

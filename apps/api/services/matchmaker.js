@@ -253,6 +253,25 @@ async function createQueueGame(agents) {
     await client.query('COMMIT')
 
     console.log(`[Matchmaker] Created queue game '${title}' (${gameId}) with ${agents.length} agents`)
+
+    // Schedule precise state transitions (cron is just a safety net)
+    const bettingDelay = new Date(bettingStart).getTime() - Date.now()
+    const battleDelay = new Date(battleStart).getTime() - Date.now()
+
+    setTimeout(() => {
+      // Lazy require to avoid circular dependency
+      const { processGameTransitions } = require('./scheduler')
+      processGameTransitions().catch(err =>
+        console.error(`[Matchmaker] Scheduled betting transition failed:`, err)
+      )
+    }, bettingDelay + 500) // +500ms buffer
+
+    setTimeout(() => {
+      const { processGameTransitions } = require('./scheduler')
+      processGameTransitions().catch(err =>
+        console.error(`[Matchmaker] Scheduled battle transition failed:`, err)
+      )
+    }, battleDelay + 500)
   } catch (err) {
     await client.query('ROLLBACK')
     console.error('[Matchmaker] Failed to create queue game:', err)

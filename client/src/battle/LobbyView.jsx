@@ -1,10 +1,39 @@
-import React from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { WEAPON_EMOJI, SLOT_COLORS } from './AgentToken'
 import CountdownTimer from '../components/CountdownTimer'
+import socket from '../socket'
 
 export default function LobbyView({ game, onSponsor }) {
   const entries = game.entries || []
   const maxSlots = game.max_entries || 8
+  const [speakingSlots, setSpeakingSlots] = useState({})
+  const timersRef = useRef({})
+
+  // Listen for chat messages to show speech bubbles
+  useEffect(() => {
+    function onChat(msg) {
+      if (msg.slot == null || msg.msg_type === 'system' || msg.msg_type === 'human_chat') return
+      setSpeakingSlots(prev => ({ ...prev, [msg.slot]: true }))
+
+      // Clear previous timer for this slot
+      if (timersRef.current[msg.slot]) {
+        clearTimeout(timersRef.current[msg.slot])
+      }
+      timersRef.current[msg.slot] = setTimeout(() => {
+        setSpeakingSlots(prev => {
+          const next = { ...prev }
+          delete next[msg.slot]
+          return next
+        })
+      }, 3000)
+    }
+
+    socket.on('chat', onChat)
+    return () => {
+      socket.off('chat', onChat)
+      Object.values(timersRef.current).forEach(clearTimeout)
+    }
+  }, [])
 
   return (
     <div className="lobby-view">
@@ -45,6 +74,13 @@ export default function LobbyView({ game, onSponsor }) {
               <div className="lobby-slot-header">
                 <span className="lobby-slot-number" style={{ color }}>Slot {i}</span>
                 <span className="lobby-slot-weapon">{weaponIcon} {entry.weapon_name || entry.weapon_slug}</span>
+                {speakingSlots[i] && (
+                  <span className="lobby-slot-speaking" title="Speaking...">{'\uD83D\uDCAC'}</span>
+                )}
+              </div>
+
+              <div className="lobby-slot-weapon-display">
+                <span className="lobby-weapon-icon">{weaponIcon}</span>
               </div>
 
               <div className="lobby-slot-stats">

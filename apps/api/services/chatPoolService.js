@@ -137,9 +137,49 @@ function clearGameCache(gameId) {
   }
 }
 
+/**
+ * Trigger auto-chat from all agents in a game (for lobby/betting phases).
+ * Picks one random agent that has a pool, fires a message from the given category.
+ */
+async function triggerAutoChat(gameId, category) {
+  try {
+    // Get all agents with chat pools for this game
+    const poolResult = await db.query(
+      `SELECT acp.agent_id, acp.responses, ge.slot
+       FROM agent_chat_pool acp
+       JOIN game_entries ge ON ge.game_id = acp.game_id AND ge.agent_id = acp.agent_id
+       WHERE acp.game_id = $1`,
+      [gameId]
+    )
+    if (poolResult.rows.length === 0) return
+
+    // Pick a random agent
+    const agent = poolResult.rows[Math.floor(Math.random() * poolResult.rows.length)]
+    const responses = typeof agent.responses === 'string' ? JSON.parse(agent.responses) : agent.responses
+    const messages = responses[category]
+    if (!messages || messages.length === 0) return
+
+    const message = messages[Math.floor(Math.random() * messages.length)]
+
+    const insertResult = await db.query(
+      `INSERT INTO game_chat (game_id, tick, msg_type, sender_id, slot, message)
+       VALUES ($1, NULL, 'ai_chat', $2, $3, $4)
+       RETURNING id, tick, msg_type, slot, message, created_at`,
+      [gameId, agent.agent_id, agent.slot, message]
+    )
+
+    if (io && insertResult.rows[0]) {
+      io.to(`game:${gameId}`).emit('chat', insertResult.rows[0])
+    }
+  } catch (err) {
+    // Fire and forget
+  }
+}
+
 module.exports = {
   setIO,
   triggerChat,
+  triggerAutoChat,
   preloadPools,
   clearGameCache
 }

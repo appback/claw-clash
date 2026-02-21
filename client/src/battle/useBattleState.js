@@ -5,6 +5,10 @@ import socket from '../socket'
 /**
  * WebSocket-based hook for live battle state.
  * Uses socket.io for real-time tick push with gap detection fallback to HTTP.
+ *
+ * Primary: WS tick events populate state directly.
+ * Fallback: HTTP GET /state for initial load + gap recovery.
+ * Only 'battle_ended' WS event sets error='ended'.
  */
 export default function useBattleState(gameId, isActive) {
   const [state, setState] = useState(null)
@@ -20,20 +24,31 @@ export default function useBattleState(gameId, isActive) {
       return
     }
 
-    // Join game room
+    // Join game room (already joined by GamePage, but ensure)
     socket.emit('join_game', gameId)
 
-    // Initial state load via HTTP
-    publicApi.get('/games/' + gameId + '/state')
-      .then(res => {
-        setState(res.data)
-        lastTickRef.current = res.data.tick
-      })
-      .catch(err => {
-        if (err.response?.status === 400) setError('ended')
-      })
+    // Initial state load via HTTP (best-effort, WS ticks are primary)
+    function loadInitialState(retries = 5) {
+      publicApi.get('/games/' + gameId + '/state')
+        .then(res => {
+          setState(res.data)
+          lastTickRef.current = res.data.tick
+        })
+        .catch(() => {
+          // Don't set error — wait for WS ticks instead.
+          // Battle engine may not have initialized yet.
+          if (retries > 0) {
+            setTimeout(() => loadInitialState(retries - 1), 1000)
+          }
+          // After all retries, still don't error — WS ticks will populate state
+        })
+    }
+    loadInitialState()
 
     function onTick(tickState) {
+      // WS tick arrived — battle is definitely active, clear any stale error
+      if (error) setError(null)
+
       // Gap detection: if tick is not consecutive, reload full state via HTTP
       if (lastTickRef.current !== null && tickState.tick !== lastTickRef.current + 1) {
         publicApi.get('/games/' + gameId + '/state')
@@ -49,18 +64,28 @@ export default function useBattleState(gameId, isActive) {
     }
 
     function onBattleEnded() {
+      // Only this event should set ended — NOT HTTP 400
       setError('ended')
     }
 
     function onGameState({ state: newState }) {
       if (newState === 'battle') {
-        // Re-fetch full state when battle starts
-        publicApi.get('/games/' + gameId + '/state')
-          .then(res => {
-            setState(res.data)
-            lastTickRef.current = res.data.tick
-          })
-          .catch(() => {})
+        // Battle just started — fetch initial state with retry
+        function fetchBattleState(retries = 5) {
+          publicApi.get('/games/' + gameId + '/state')
+            .then(res => {
+              setState(res.data)
+              lastTickRef.current = res.data.tick
+            })
+            .catch(() => {
+              if (retries > 0) {
+                setTimeout(() => fetchBattleState(retries - 1), 1000)
+              }
+            })
+        }
+        fetchBattleState()
+      } else if (newState === 'ended') {
+        setError('ended')
       }
     }
 

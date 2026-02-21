@@ -304,15 +304,27 @@ async function sendChat(req, res, next) {
     const result = await db.query(
       `INSERT INTO game_chat (game_id, tick, msg_type, sender_id, message, emotion)
        VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, tick, msg_type, message, emotion, created_at`,
+       RETURNING id, tick, msg_type, slot, message, emotion, created_at`,
       [id, tick, msgType, senderId, message, emotion || null]
     )
 
+    // Look up slot for agent messages (INSERT doesn't set slot)
+    let emitData = result.rows[0]
+    if (isAgent) {
+      const entryResult = await db.query(
+        'SELECT slot FROM game_entries WHERE game_id = $1 AND agent_id = $2',
+        [id, req.agent.id]
+      )
+      if (entryResult.rows[0]) {
+        emitData = { ...emitData, slot: entryResult.rows[0].slot }
+      }
+    }
+
     // Push chat via WebSocket
     const io = req.app.get('io')
-    if (io) io.to(`game:${id}`).emit('chat', result.rows[0])
+    if (io) io.to(`game:${id}`).emit('chat', emitData)
 
-    res.status(201).json(result.rows[0])
+    res.status(201).json(emitData)
   } catch (err) {
     next(err)
   }
