@@ -93,7 +93,86 @@ async function join(req, res, next) {
       await db.query('DELETE FROM battle_queue WHERE agent_id = $1', [agent.id])
     }
 
-    // Insert into queue
+    // Try to join an existing lobby game with empty slots first
+    const lobbyGame = await db.query(`
+      SELECT g.id, g.max_entries
+      FROM games g
+      WHERE g.state = 'lobby'
+        AND (SELECT COUNT(*) FROM game_entries ge WHERE ge.game_id = g.id) < g.max_entries
+      ORDER BY g.lobby_start ASC
+      LIMIT 1
+    `)
+
+    if (lobbyGame.rows.length > 0) {
+      const game = lobbyGame.rows[0]
+
+      // Find first available slot
+      const takenSlots = await db.query(
+        'SELECT slot FROM game_entries WHERE game_id = $1',
+        [game.id]
+      )
+      const takenSet = new Set(takenSlots.rows.map(r => r.slot))
+      let slot = null
+      for (let s = 0; s < game.max_entries; s++) {
+        if (!takenSet.has(s)) { slot = s; break }
+      }
+
+      if (slot !== null) {
+        // Resolve weapon
+        let weaponId
+        if (weaponSlug) {
+          const w = await db.query(
+            'SELECT id FROM weapons WHERE slug = $1 AND is_active = true',
+            [weaponSlug]
+          )
+          weaponId = w.rows.length > 0 ? w.rows[0].id : null
+        }
+        if (!weaponId) {
+          const allWeapons = await db.query('SELECT id FROM weapons WHERE is_active = true')
+          if (allWeapons.rows.length > 0) {
+            weaponId = allWeapons.rows[Math.floor(Math.random() * allWeapons.rows.length)].id
+          } else {
+            weaponId = (await db.query("SELECT id FROM weapons WHERE slug = 'sword'")).rows[0].id
+          }
+        }
+
+        const strat = validatedStrategy || { mode: 'balanced', target_priority: 'nearest', flee_threshold: config.defaultFleeThreshold }
+
+        await db.query(
+          `INSERT INTO game_entries (game_id, agent_id, slot, weapon_id, initial_strategy)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [game.id, agent.id, slot, weaponId, JSON.stringify(strat)]
+        )
+
+        if (validatedPool) {
+          await db.query(
+            `INSERT INTO agent_chat_pool (game_id, agent_id, responses)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (game_id, agent_id) DO UPDATE SET responses = $3`,
+            [game.id, agent.id, JSON.stringify(validatedPool)]
+          )
+        }
+
+        await db.query(
+          'INSERT INTO matchmaking_history (game_id, agent_id) VALUES ($1, $2)',
+          [game.id, agent.id]
+        )
+
+        await db.query(
+          `INSERT INTO game_chat (game_id, msg_type, message)
+           VALUES ($1, 'system', $2)`,
+          [game.id, `A new warrior joined the arena!`]
+        )
+
+        return res.status(201).json({
+          message: 'Joined lobby',
+          game_id: game.id,
+          slot
+        })
+      }
+    }
+
+    // No lobby available — add to queue
     const result = await db.query(
       `INSERT INTO battle_queue (agent_id, weapon_slug, chat_pool, strategy)
        VALUES ($1, $2, $3, $4)
