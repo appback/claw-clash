@@ -1207,7 +1207,7 @@ a:hover {
   justify-content: center;
 }
 
-.agent-token-emoji {
+.agent-token-face {
   font-size: 1.5rem;
   filter: drop-shadow(0 0 6px var(--agent-color, var(--accent)));
 }
@@ -1253,7 +1253,7 @@ a:hover {
   animation: agent-shake 0.4s ease-out;
 }
 
-.agent-hit .agent-token-emoji {
+.agent-hit .agent-token-face {
   filter: drop-shadow(0 0 10px rgba(255, 50, 50, 0.9)) brightness(1.5);
 }
 
@@ -1534,7 +1534,7 @@ a:hover {
   gap: 4px;
 }
 
-.lobby-crab-icon {
+.lobby-face {
   font-size: 3rem;
   filter: drop-shadow(0 0 8px var(--slot-color));
 }

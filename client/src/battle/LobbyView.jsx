@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { WEAPON_EMOJI, SLOT_COLORS } from './AgentToken'
+import AgentFace from './AgentFace'
 import CountdownTimer from '../components/CountdownTimer'
 import socket from '../socket'
 
@@ -82,7 +83,7 @@ export default function LobbyView({ game, onSponsor }) {
 
               <div className="lobby-slot-visual">
                 <div className="lobby-slot-visual-left">
-                  <span className="lobby-crab-icon">{'\uD83E\uDD80'}</span>
+                  <AgentFace className="lobby-face" />
                   <span className="lobby-weapon-icon">{weaponIcon}</span>
                 </div>
                 {speakingSlots[i] && (

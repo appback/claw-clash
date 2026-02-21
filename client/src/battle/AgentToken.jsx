@@ -1,4 +1,5 @@
 import React from 'react'
+import AgentFace from './AgentFace'
 
 const SLOT_COLORS = [
   'var(--crab-1)', 'var(--crab-2)', 'var(--crab-3)', 'var(--crab-4)',
@@ -43,7 +44,7 @@ export default function AgentToken({ agent, cellSize, isHit, isAttacking }) {
       title={`Slot ${agent.slot} | HP: ${agent.hp}/${agent.maxHp} | ${agent.weapon} | Score: ${agent.score}`}
     >
       <div className="agent-token-body">
-        <div className="agent-token-emoji">{'\uD83E\uDD80'}</div>
+        <AgentFace className="agent-token-face" />
         <div className="agent-token-weapon">{weapon}</div>
       </div>
       <div className="agent-token-slot">{agent.slot}</div>
