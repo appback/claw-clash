@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { publicApi } from '../api'
+import { publicApi, userApi } from '../api'
 import socket from '../socket'
 import ThemeToggle from './ThemeToggle'
 
@@ -18,6 +18,7 @@ export default function Nav() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [auth, setAuth] = useState(getAuthState)
   const [queueCount, setQueueCount] = useState(0)
+  const [userPoints, setUserPoints] = useState(null)
 
   useEffect(() => {
     function onAuthChange() {
@@ -42,6 +43,17 @@ export default function Nav() {
     socket.on('queue_update', onQueueUpdate)
     return () => socket.off('queue_update', onQueueUpdate)
   }, [])
+
+  // Load user points when logged in
+  useEffect(() => {
+    if (auth.isUser) {
+      userApi.get('/users/me')
+        .then(res => setUserPoints(res.data.points))
+        .catch(() => {})
+    } else {
+      setUserPoints(null)
+    }
+  }, [auth.isUser])
 
   function handleLogout() {
     localStorage.removeItem('user_token')
@@ -103,6 +115,9 @@ export default function Nav() {
           ))}
           {auth.isUser ? (
             <>
+              {userPoints != null && (
+                <span className="nav-points-badge">{userPoints} pts</span>
+              )}
               <span className="nav-link" style={{ color: 'var(--primary)', cursor: 'default' }}>
                 {displayName}
               </span>

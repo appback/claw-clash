@@ -189,7 +189,7 @@ function processTick(gameId) {
 
     // Resolve action (single agent — no collision possible)
     if (actor.action.type === 'move') {
-      resolveSingleMove(actor, game.arena, events)
+      resolveSingleMove(actor, game, events)
       collectPowerupsForAgent(actor, game, events)
     } else if (actor.action.type === 'attack') {
       resolveSingleAttack(actor, game, events)
@@ -419,6 +419,12 @@ function decideAction(agent, game, shrinkPhase) {
 
   if (enemies.length === 0) return { type: 'stay' }
 
+  // Build occupied set once for all move decisions
+  const occupied = new Set()
+  for (const a of game.agents) {
+    if (a.alive && a.slot !== agent.slot) occupied.add(`${a.x},${a.y}`)
+  }
+
   // Troll: random action chance
   if (personality.randomChance > 0 && Math.random() < personality.randomChance) {
     const actions = ['attack', 'move', 'stay']
@@ -439,7 +445,7 @@ function decideAction(agent, game, shrinkPhase) {
 
   // Priority 1: Escape danger zone
   if (isInDangerZone(agent.x, agent.y, shrinkPhase, game.arena.grid_width, game.arena.grid_height)) {
-    return moveToSafeZone(agent, shrinkPhase, game.arena)
+    return moveToSafeZone(agent, shrinkPhase, game.arena, occupied)
   }
 
   // Priority 2: Opportunistic powerup collection (ANY type, ANY HP level)
@@ -450,18 +456,18 @@ function decideAction(agent, game, shrinkPhase) {
 
       // Very close powerup (1-2 tiles) — always grab it
       if (puDist <= 2) {
-        return moveToward(agent, nearestPowerup, game.arena)
+        return moveToward(agent, nearestPowerup, game.arena, occupied)
       }
 
       // Heal pack when HP < 70% — go for it if within 4 tiles
       if (nearestPowerup.type === 'heal_pack' && agent.hp < agent.maxHp * 0.7 && puDist <= 4) {
-        return moveToward(agent, nearestPowerup, game.arena)
+        return moveToward(agent, nearestPowerup, game.arena, occupied)
       }
 
       // Any powerup closer than nearest enemy — divert to collect
       const nearestEnemy = enemies[0]
       if (nearestEnemy && puDist < manhattanDist(agent, nearestEnemy)) {
-        return moveToward(agent, nearestPowerup, game.arena)
+        return moveToward(agent, nearestPowerup, game.arena, occupied)
       }
     }
   }
@@ -477,7 +483,7 @@ function decideAction(agent, game, shrinkPhase) {
     const nearest = enemies[0]
 
     // Try to flee, but if cornered → fight back
-    const fleeAction = moveAwayFrom(agent, nearest, game.arena)
+    const fleeAction = moveAwayFrom(agent, nearest, game.arena, occupied)
     if (fleeAction.type === 'stay') {
       const dist = manhattanDist(agent, nearest)
       if (dist <= agent.weapon.range && agent.cooldown === 0) {
@@ -506,16 +512,16 @@ function decideAction(agent, game, shrinkPhase) {
   switch (effectiveMode) {
     case 'aggressive':
       agent.consecutiveFleeTicks = 0
-      return moveToward(agent, target, game.arena)
+      return moveToward(agent, target, game.arena, occupied)
     case 'defensive':
       return { type: 'stay' }
     case 'balanced':
     default:
       if (forceEngage || agent.hp > agent.maxHp * personality.balancedFleeHpPct) {
         agent.consecutiveFleeTicks = 0
-        return moveToward(agent, target, game.arena)
+        return moveToward(agent, target, game.arena, occupied)
       } else {
-        const fleeAction = moveAwayFrom(agent, enemies[0], game.arena)
+        const fleeAction = moveAwayFrom(agent, enemies[0], game.arena, occupied)
         if (fleeAction.type === 'stay') {
           const d = manhattanDist(agent, enemies[0])
           if (d <= agent.weapon.range && agent.cooldown === 0) {
@@ -565,14 +571,21 @@ function selectTarget(enemies, priority) {
 // Single-Agent Movement (No Collisions)
 // =========================================
 
-function resolveSingleMove(agent, arena, events) {
+function resolveSingleMove(agent, game, events) {
   const dir = agent.action.direction
   if (!dir) return
 
+  const arena = game.arena
   const hasSpeedBoost = agent.buffs.some(b => b.type === 'speed_boost')
   const steps = hasSpeedBoost ? 2 : 1
   let nx = agent.x
   let ny = agent.y
+
+  // Build occupied set (all alive agents except self)
+  const occupied = new Set()
+  for (const a of game.agents) {
+    if (a.alive && a.slot !== agent.slot) occupied.add(`${a.x},${a.y}`)
+  }
 
   for (let s = 0; s < steps; s++) {
     const cx = nx + (dir === 'right' ? 1 : dir === 'left' ? -1 : 0)
@@ -581,6 +594,7 @@ function resolveSingleMove(agent, arena, events) {
     if (cx < 0 || cx >= arena.grid_width || cy < 0 || cy >= arena.grid_height) break
     const t = getTerrain(arena.terrain, cx, cy)
     if (t === 1 || t === 2) break  // wall and bush block movement
+    if (occupied.has(`${cx},${cy}`)) break  // another agent blocks movement
 
     nx = cx
     ny = cy
@@ -817,9 +831,6 @@ async function finalizeBattle(gameId, finalTick, reason) {
 
   await gameStateManager.endGame(gameId)
 
-  // Push battle_ended via WebSocket
-  if (io) io.to(`game:${gameId}`).emit('battle_ended', { reason, rankings: results })
-
   const durationSec = Math.round(finalTick * config.tickIntervalMs / 1000)
   console.log(`[BattleEngine] Battle ended: ${gameId} (${reason}, tick ${finalTick}, ${durationSec}s, winner: slot ${results[0]?.slot})`)
 
@@ -869,6 +880,13 @@ async function finalizeBattle(gameId, finalTick, reason) {
     console.error(`[BattleEngine] finalizeBattle DB error (${gameId}):`, err)
   } finally {
     client.release()
+  }
+
+  // Push battle_ended after DB commit, with 5s ending delay
+  if (io) {
+    setTimeout(() => {
+      io.to(`game:${gameId}`).emit('battle_ended', { reason, rankings: results })
+    }, 5000)
   }
 
   if (onBattleEndCallback) {
@@ -961,7 +979,7 @@ function hasLineOfSight(attacker, target, terrain) {
   return true
 }
 
-function moveToward(agent, target, arena) {
+function moveToward(agent, target, arena, occupied) {
   const dx = target.x - agent.x
   const dy = target.y - agent.y
 
@@ -979,7 +997,7 @@ function moveToward(agent, target, arena) {
 
     if (nx >= 0 && nx < arena.grid_width && ny >= 0 && ny < arena.grid_height) {
       const t = getTerrain(arena.terrain, nx, ny)
-      if (t !== 1 && t !== 2) {
+      if (t !== 1 && t !== 2 && !(occupied && occupied.has(`${nx},${ny}`))) {
         return { type: 'move', direction: d.dir }
       }
     }
@@ -988,7 +1006,7 @@ function moveToward(agent, target, arena) {
   return { type: 'stay' }
 }
 
-function moveAwayFrom(agent, threat, arena) {
+function moveAwayFrom(agent, threat, arena, occupied) {
   const dx = agent.x - threat.x
   const dy = agent.y - threat.y
 
@@ -1006,7 +1024,7 @@ function moveAwayFrom(agent, threat, arena) {
 
     if (nx >= 0 && nx < arena.grid_width && ny >= 0 && ny < arena.grid_height) {
       const t = getTerrain(arena.terrain, nx, ny)
-      if (t !== 1 && t !== 2) {
+      if (t !== 1 && t !== 2 && !(occupied && occupied.has(`${nx},${ny}`))) {
         return { type: 'move', direction: d.dir }
       }
     }
@@ -1015,10 +1033,10 @@ function moveAwayFrom(agent, threat, arena) {
   return { type: 'stay' }
 }
 
-function moveToSafeZone(agent, shrinkPhase, arena) {
+function moveToSafeZone(agent, shrinkPhase, arena, occupied) {
   const centerX = Math.floor(arena.grid_width / 2)
   const centerY = Math.floor(arena.grid_height / 2)
-  return moveToward(agent, { x: centerX, y: centerY }, arena)
+  return moveToward(agent, { x: centerX, y: centerY }, arena, occupied)
 }
 
 function parseTerrain(arena) {

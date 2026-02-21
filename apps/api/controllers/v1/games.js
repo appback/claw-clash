@@ -217,6 +217,15 @@ async function replay(req, res, next) {
     )
     const arena = arenaResult.rows[0] || { grid_width: 8, grid_height: 8, terrain: [] }
 
+    // Fetch chat messages for replay
+    const chatMessages = await db.query(
+      `SELECT tick, msg_type, slot, message, created_at
+       FROM game_chat
+       WHERE game_id = $1 AND tick IS NOT NULL
+       ORDER BY tick ASC, created_at ASC`,
+      [id]
+    )
+
     res.json({
       game_id: id,
       title: game.title,
@@ -228,7 +237,8 @@ async function replay(req, res, next) {
         terrain: typeof arena.terrain === 'string' ? JSON.parse(arena.terrain) : arena.terrain
       },
       entries: entries.rows,
-      ticks: ticks.rows.map(t => t.state)
+      ticks: ticks.rows.map(t => t.state),
+      chat: chatMessages.rows
     })
   } catch (err) {
     next(err)
@@ -506,6 +516,30 @@ async function join(req, res, next) {
         'UPDATE games SET prize_pool = prize_pool + $1, updated_at = now() WHERE id = $2',
         [game.entry_fee, id]
       )
+    }
+
+    // Lobby full → fast-forward to betting in min(remaining, 30s)
+    const newCount = entries.rows.length + 1
+    if (newCount >= game.max_entries) {
+      const now = Date.now()
+      const currentBetting = new Date(game.betting_start).getTime()
+      const remaining = currentBetting - now
+      const fastForwardMs = Math.min(remaining, 30000)
+      if (fastForwardMs < remaining) {
+        const newBettingStart = new Date(now + fastForwardMs)
+        const bettingDuration = new Date(game.battle_start).getTime() - currentBetting
+        const newBattleStart = new Date(newBettingStart.getTime() + bettingDuration)
+        await db.query(
+          'UPDATE games SET betting_start = $1, battle_start = $2, updated_at = now() WHERE id = $3',
+          [newBettingStart.toISOString(), newBattleStart.toISOString(), id]
+        )
+        console.log(`[Games] Lobby full for ${id}, fast-forwarding to betting in ${Math.round(fastForwardMs / 1000)}s`)
+        const io = req.app.get('io')
+        if (io) io.to(`game:${id}`).emit('lobby_full', {
+          betting_start: newBettingStart.toISOString(),
+          battle_start: newBattleStart.toISOString()
+        })
+      }
     }
 
     res.status(201).json({
@@ -925,11 +959,193 @@ async function createWeapon(req, res, next) {
   }
 }
 
+// ==========================================
+// Betting Endpoints
+// ==========================================
+
+/**
+ * POST /api/v1/games/:id/bet - Place a bet on a slot (betting phase)
+ * Logged-in users: amount 1/10/100 (deducts points)
+ * Anonymous: amount=0 (free bet, count only, max 5 per game)
+ */
+async function placeBet(req, res, next) {
+  try {
+    const { id } = req.params
+    const { slot, amount } = req.body
+    const userId = req.user ? req.user.userId : null
+    const isAnon = !userId
+
+    if (slot === undefined || slot === null) throw new ValidationError('slot is required')
+
+    // Verify game is in betting phase
+    const game = await db.query('SELECT state, max_entries FROM games WHERE id = $1', [id])
+    if (game.rows.length === 0) throw new NotFoundError('Game not found')
+    if (game.rows[0].state !== 'betting') {
+      throw new BadRequestError('Bets are only accepted during betting phase')
+    }
+
+    // Verify slot has an entry
+    const entry = await db.query(
+      'SELECT id FROM game_entries WHERE game_id = $1 AND slot = $2',
+      [id, slot]
+    )
+    if (entry.rows.length === 0) throw new NotFoundError('No agent in this slot')
+
+    if (isAnon) {
+      // Anonymous bet: amount=0, use IP as anon_id, max 5 per game
+      const anonId = req.ip || req.headers['x-forwarded-for'] || 'unknown'
+      const existing = await db.query(
+        'SELECT COUNT(*) AS cnt FROM game_bets WHERE game_id = $1 AND anon_id = $2',
+        [id, anonId]
+      )
+      if (parseInt(existing.rows[0].cnt) >= 5) {
+        throw new BadRequestError('Maximum 5 free bets per game')
+      }
+
+      await db.query(
+        'INSERT INTO game_bets (game_id, user_id, slot, amount, anon_id) VALUES ($1, NULL, $2, 0, $3)',
+        [id, slot, anonId]
+      )
+
+      res.status(201).json({ slot, amount: 0, remaining_points: null })
+    } else {
+      // Logged-in bet: amount 1/10/100
+      if (!config.betAmounts.includes(amount)) {
+        throw new ValidationError(`amount must be one of: ${config.betAmounts.join(', ')}`)
+      }
+
+      const client = await db.getClient()
+      try {
+        await client.query('BEGIN')
+
+        const userResult = await client.query(
+          'SELECT points FROM users WHERE id = $1 FOR UPDATE',
+          [userId]
+        )
+        const currentPoints = parseInt(userResult.rows[0].points)
+        if (currentPoints < amount) {
+          throw new BadRequestError(`Insufficient points. Have ${currentPoints}, need ${amount}`)
+        }
+
+        await client.query(
+          'INSERT INTO game_bets (game_id, user_id, slot, amount) VALUES ($1, $2, $3, $4)',
+          [id, userId, slot, amount]
+        )
+
+        await client.query(
+          'UPDATE users SET points = points - $1 WHERE id = $2',
+          [amount, userId]
+        )
+
+        await client.query('COMMIT')
+
+        const remaining = currentPoints - amount
+        res.status(201).json({ slot, amount, remaining_points: remaining })
+      } catch (err) {
+        await client.query('ROLLBACK')
+        throw err
+      } finally {
+        client.release()
+      }
+    }
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * GET /api/v1/games/:id/bets - Get bet counts per slot (public) + my bets (if logged in)
+ */
+async function getBetCounts(req, res, next) {
+  try {
+    const { id } = req.params
+
+    const game = await db.query('SELECT max_entries FROM games WHERE id = $1', [id])
+    if (game.rows.length === 0) throw new NotFoundError('Game not found')
+
+    // Bet counts per slot (public info — count only, no amounts)
+    const counts = await db.query(
+      `SELECT slot, COUNT(*) AS count FROM game_bets WHERE game_id = $1 GROUP BY slot ORDER BY slot`,
+      [id]
+    )
+    const countMap = {}
+    for (const r of counts.rows) {
+      countMap[r.slot] = parseInt(r.count)
+    }
+
+    const bets = []
+    for (let i = 0; i < game.rows[0].max_entries; i++) {
+      bets.push({ slot: i, count: countMap[i] || 0 })
+    }
+
+    const result = { bets }
+
+    // If logged in, include user's own bets
+    if (req.user) {
+      const myBets = await db.query(
+        `SELECT slot, amount, payout, settled_at FROM game_bets WHERE game_id = $1 AND user_id = $2 ORDER BY created_at`,
+        [id, req.user.userId]
+      )
+      result.my_bets = myBets.rows.map(b => ({
+        slot: b.slot,
+        amount: parseInt(b.amount),
+        payout: parseInt(b.payout),
+        settled: !!b.settled_at
+      }))
+    } else {
+      // Guest: return bets by anon_id (IP)
+      const anonId = req.ip || req.headers['x-forwarded-for'] || 'unknown'
+      const guestBets = await db.query(
+        `SELECT slot, amount, payout, settled_at FROM game_bets WHERE game_id = $1 AND anon_id = $2 ORDER BY created_at`,
+        [id, anonId]
+      )
+      if (guestBets.rows.length > 0) {
+        result.my_bets = guestBets.rows.map(b => ({
+          slot: b.slot,
+          amount: parseInt(b.amount),
+          payout: parseInt(b.payout),
+          settled: !!b.settled_at
+        }))
+        result.is_guest = true
+      }
+    }
+
+    res.json(result)
+  } catch (err) {
+    next(err)
+  }
+}
+
+/**
+ * GET /api/v1/users/me - Get current user profile (points etc.)
+ */
+async function getUserProfile(req, res, next) {
+  try {
+    const result = await db.query(
+      'SELECT id, email, display_name, role, points FROM users WHERE id = $1',
+      [req.user.userId]
+    )
+    if (result.rows.length === 0) throw new NotFoundError('User not found')
+
+    const user = result.rows[0]
+    res.json({
+      id: user.id,
+      email: user.email,
+      display_name: user.display_name,
+      role: user.role,
+      points: parseInt(user.points)
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   list, get, getState, replay, getChat, sendChat,
   join, submitStrategy,
   uploadChatPool, getChatPoolStatus,
   sponsor, getSponsorships,
+  placeBet, getBetCounts, getUserProfile,
   create, update,
   listArenas, listWeapons, createArena, createWeapon
 }

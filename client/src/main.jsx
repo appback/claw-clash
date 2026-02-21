@@ -11,6 +11,7 @@ import HistoryPage from './pages/HistoryPage'
 import LoginPage from './pages/LoginPage'
 import AdminPage from './pages/AdminPage'
 import GamePage from './pages/GamePage'
+import AuthCallbackPage from './pages/AuthCallbackPage'
 import './styles.css'
 
 const savedTheme = localStorage.getItem('theme') || 'dark'
@@ -30,6 +31,7 @@ createRoot(document.getElementById('root')).render(
             <Route path="/login" element={<LoginPage />} />
             <Route path="/game/:id" element={<GamePage />} />
             <Route path="/admin" element={<AdminPage />} />
+            <Route path="/auth/callback" element={<AuthCallbackPage />} />
           </Routes>
         </main>
         <Footer />

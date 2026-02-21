@@ -8,6 +8,7 @@ const battleEngine = require('./battleEngine')
 const gameStateManager = require('./gameStateManager')
 const matchmaker = require('./matchmaker')
 const chatPoolService = require('./chatPoolService')
+const betSettler = require('./betSettler')
 
 // Socket.io instance (set by startScheduler)
 let io = null
@@ -236,8 +237,12 @@ async function processGameTransitions() {
 async function handleBattleEnd(gameId, results, reason) {
   console.log(`[Scheduler] Battle ended for game ${gameId}: ${reason}, ${results.length} agents ranked`)
 
-  // Settle predictions if prediction system is extended for games
-  // TODO: Game predictions in Phase 3
+  // Settle game bets
+  try {
+    await betSettler.settle(gameId, results)
+  } catch (err) {
+    console.error(`[Scheduler] Bet settlement error for ${gameId}:`, err)
+  }
 
   // Distribute sponsor returns
   try {

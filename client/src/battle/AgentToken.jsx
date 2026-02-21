@@ -18,7 +18,7 @@ const WEAPON_EMOJI = {
   lance: '\uD83D\uDD31'
 }
 
-export default function AgentToken({ agent, cellSize, isHit, isAttacking }) {
+export default function AgentToken({ agent, cellSize, isHit, isAttacking, bubble }) {
   if (!agent.alive) return null
 
   const hpPercent = Math.max(0, (agent.hp / agent.maxHp) * 100)
@@ -43,6 +43,9 @@ export default function AgentToken({ agent, cellSize, isHit, isAttacking }) {
       }}
       title={`Slot ${agent.slot} | HP: ${agent.hp}/${agent.maxHp} | ${agent.weapon} | Score: ${agent.score}`}
     >
+      {bubble && (
+        <div className="speech-bubble">{bubble}</div>
+      )}
       <div className="agent-token-body">
         <AgentFace className="agent-token-face" />
         <div className="agent-token-weapon">{weapon}</div>

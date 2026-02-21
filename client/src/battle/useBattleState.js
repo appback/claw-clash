@@ -58,7 +58,8 @@ export default function useBattleState(gameId, isActive) {
           })
           .catch(() => {})
       } else {
-        setState(tickState)
+        // Preserve arena from initial HTTP state (tick doesn't include it)
+        setState(prev => prev?.arena ? { ...tickState, arena: prev.arena } : tickState)
       }
       lastTickRef.current = tickState.tick
     }

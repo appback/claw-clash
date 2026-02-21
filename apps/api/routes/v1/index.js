@@ -90,9 +90,20 @@ function userOrAgentAuth(req, res, next) {
 router.post('/games/:id/chat', userOrAgentAuth, gamesController.sendChat)
 
 // ==========================================
+// Game Betting (user auth, betting phase)
+// ==========================================
+router.post('/games/:id/bet', optionalJwtAuth, gamesController.placeBet)
+router.get('/games/:id/bets', optionalJwtAuth, gamesController.getBetCounts)
+
+// ==========================================
 // Game Sponsorship (user auth, lobby only)
 // ==========================================
 router.post('/games/:id/sponsor', jwtAuth, gamesController.sponsor)
+
+// ==========================================
+// User Profile (user auth)
+// ==========================================
+router.get('/users/me', jwtAuth, gamesController.getUserProfile)
 
 // ==========================================
 // Matchmaking Queue (agent + public)

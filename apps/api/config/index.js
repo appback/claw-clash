@@ -84,6 +84,10 @@ module.exports = {
   queueLongWaitMinutes: 10,
   queueRecentGameCount: 3,
 
+  // Betting (games)
+  betAmounts: [1, 10, 100],
+  betHouseEdge: 0.05,
+
   // Prediction
   houseEdge: 0.05,
   maxStake: 1000,

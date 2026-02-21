@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { publicApi, userApi } from '../api'
 import { useToast } from '../components/Toast'
@@ -8,7 +8,10 @@ import { STATE_LABELS } from '../components/GameCard'
 import LobbyView from '../battle/LobbyView'
 import BattleArena from '../battle/BattleArena'
 import BattleReplay from '../battle/BattleReplay'
-import BattleResultBoard from '../battle/BattleResultBoard'
+import WinnerSpotlight from '../battle/WinnerSpotlight'
+import BattleStatsTable from '../battle/BattleStatsTable'
+import SponsorshipSummary from '../battle/SponsorshipSummary'
+import BettingSummary from '../battle/BettingSummary'
 import ChatPanel from '../battle/ChatPanel'
 import useBattleState from '../battle/useBattleState'
 import socket from '../socket'
@@ -19,9 +22,34 @@ export default function GamePage() {
   const [game, setGame] = useState(null)
   const [replay, setReplay] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [showReplay, setShowReplay] = useState(false)
+  const [userPoints, setUserPoints] = useState(null)
+  const [myBets, setMyBets] = useState([])
 
   const isBattle = game?.state === 'battle'
   const { state: liveState, error: liveError, viewers } = useBattleState(id, isBattle)
+  const [liveChatBubbles, setLiveChatBubbles] = useState([])
+
+  // Listen for chat messages during live battle → pass to BattleArena as bubbles
+  useEffect(() => {
+    if (!id) return
+    function onChat(msg) {
+      if (msg.slot != null) {
+        setLiveChatBubbles([msg])
+      }
+    }
+    socket.on('chat', onChat)
+    return () => socket.off('chat', onChat)
+  }, [id])
+
+  // Load user points if logged in
+  useEffect(() => {
+    if (localStorage.getItem('user_token')) {
+      userApi.get('/users/me')
+        .then(res => setUserPoints(res.data.points))
+        .catch(() => {})
+    }
+  }, [])
 
   // Load game data
   useEffect(() => {
@@ -34,10 +62,16 @@ export default function GamePage() {
     socket.emit('join_game', id)
     function onGameState({ state: newState }) {
       setGame(prev => prev ? { ...prev, state: newState } : prev)
+      loadGame()
+    }
+    function onLobbyFull({ betting_start, battle_start }) {
+      setGame(prev => prev ? { ...prev, betting_start, battle_start } : prev)
     }
     socket.on('game_state', onGameState)
+    socket.on('lobby_full', onLobbyFull)
     return () => {
       socket.off('game_state', onGameState)
+      socket.off('lobby_full', onLobbyFull)
     }
   }, [id])
 
@@ -125,7 +159,7 @@ export default function GamePage() {
             />
           </div>
           <div className="game-sidebar">
-            <ChatPanel gameId={id} gameState={game.state} />
+            <ChatPanel gameId={id} gameState={game.state} userPoints={userPoints} myBets={myBets} />
           </div>
         </div>
       )}
@@ -134,19 +168,16 @@ export default function GamePage() {
       {game.state === 'betting' && (
         <div className="game-layout">
           <div className="game-main">
-            <div className="card">
-              <h2 className="card-title">Betting Phase</h2>
-              <p className="text-muted mt-sm">
-                Stats are locked. Place your predictions before the battle begins!
-              </p>
-              <div className="mt-md">
-                <CountdownTimer target={game.battle_start} label="Battle starts in" />
-              </div>
-            </div>
-            <LobbyView game={{ ...game, state: 'betting' }} />
+            <LobbyView
+              game={game}
+              isBetting={true}
+              userPoints={userPoints}
+              onBetPlaced={(remaining) => setUserPoints(remaining)}
+              onBetsLoaded={setMyBets}
+            />
           </div>
           <div className="game-sidebar">
-            <ChatPanel gameId={id} gameState={game.state} />
+            <ChatPanel gameId={id} gameState={game.state} userPoints={userPoints} myBets={myBets} />
           </div>
         </div>
       )}
@@ -159,10 +190,12 @@ export default function GamePage() {
               state={liveState}
               gridWidth={game.grid_width}
               gridHeight={game.grid_height}
+              entries={game.entries}
+              chatMessages={liveChatBubbles}
             />
           </div>
           <div className="game-sidebar">
-            <ChatPanel gameId={id} gameState={game.state} />
+            <ChatPanel gameId={id} gameState={game.state} userPoints={userPoints} myBets={myBets} />
           </div>
         </div>
       )}
@@ -170,8 +203,30 @@ export default function GamePage() {
       {/* ENDED state */}
       {['ended', 'archived'].includes(game.state) && (
         <div>
+          <WinnerSpotlight game={game} />
+
+          <div className="section mt-lg">
+            <BattleStatsTable game={game} />
+          </div>
+
+          <div className="result-summaries mt-lg">
+            <SponsorshipSummary game={game} />
+            <BettingSummary gameId={id} />
+          </div>
+
           {replay && (
-            <div className="game-layout">
+            <div className="mt-lg text-center">
+              <button
+                className="btn btn-primary btn-lg replay-toggle-btn"
+                onClick={() => setShowReplay(v => !v)}
+              >
+                {showReplay ? 'Hide Replay' : 'Watch Replay'}
+              </button>
+            </div>
+          )}
+
+          {replay && showReplay && (
+            <div className="game-layout mt-lg">
               <div className="game-main">
                 <BattleReplay replayData={replay} entries={game.entries} />
               </div>
@@ -180,10 +235,6 @@ export default function GamePage() {
               </div>
             </div>
           )}
-
-          <div className="section mt-lg">
-            <BattleResultBoard game={game} />
-          </div>
         </div>
       )}
 

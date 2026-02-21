@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { publicApi, userApi } from '../api'
+import { SLOT_COLORS } from './AgentToken'
 import socket from '../socket'
 
-export default function ChatPanel({ gameId, gameState }) {
+export default function ChatPanel({ gameId, gameState, userPoints, myBets }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -72,6 +73,17 @@ export default function ChatPanel({ gameId, gameState }) {
     }
   }
 
+  // Aggregate myBets by slot for display
+  const betsBySlot = {}
+  if (myBets) {
+    for (const b of myBets) {
+      if (!betsBySlot[b.slot]) betsBySlot[b.slot] = 0
+      betsBySlot[b.slot] += b.amount
+    }
+  }
+  const totalBet = myBets ? myBets.reduce((s, b) => s + b.amount, 0) : 0
+  const guestBetCount = !isLoggedIn && myBets ? myBets.length : 0
+
   return (
     <div className="chat-panel">
       <div className="chat-header">
@@ -115,6 +127,38 @@ export default function ChatPanel({ gameId, gameState }) {
 
       {isActive && !isLoggedIn && (
         <div className="chat-login-hint">Log in to chat</div>
+      )}
+
+      {/* User asset panel */}
+      {isActive && isLoggedIn && (
+        <div className="chat-user-panel">
+          <div className="chat-user-balance">
+            {'\uD83D\uDCB0'} {userPoints != null ? userPoints : '...'} pts
+          </div>
+          {myBets && myBets.length > 0 && (
+            <div className="chat-user-bets">
+              <div className="chat-user-bets-label">This game:</div>
+              {Object.entries(betsBySlot).map(([slot, amount]) => (
+                <div key={slot} className="chat-user-bet-row">
+                  <span style={{ color: SLOT_COLORS[slot % SLOT_COLORS.length] }}>Slot {slot}</span>
+                  <span>{amount} pts</span>
+                </div>
+              ))}
+              {totalBet > 0 && (
+                <div className="chat-user-bet-total">Total: {totalBet} pts bet</div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {isActive && !isLoggedIn && (
+        <div className="chat-user-panel chat-user-panel-guest">
+          <div className="chat-user-guest-info">
+            {'\uD83C\uDFB2'} {guestBetCount}/5 free bets used
+          </div>
+          <div className="chat-user-guest-cta">Sign up to earn points!</div>
+        </div>
       )}
     </div>
   )

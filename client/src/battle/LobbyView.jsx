@@ -2,25 +2,29 @@ import React, { useState, useEffect, useRef } from 'react'
 import { WEAPON_EMOJI, SLOT_COLORS } from './AgentToken'
 import AgentFace from './AgentFace'
 import CountdownTimer from '../components/CountdownTimer'
+import { publicApi, userApi } from '../api'
 import socket from '../socket'
 
-export default function LobbyView({ game, onSponsor }) {
+const BET_AMOUNTS = [1, 10, 100]
+
+export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBetPlaced, onBetsLoaded }) {
   const entries = game.entries || []
   const maxSlots = game.max_entries || 8
   const [speakingSlots, setSpeakingSlots] = useState({})
-  const [lastMessages, setLastMessages] = useState({})
   const timersRef = useRef({})
 
-  // Listen for chat messages to show speech bubbles + persist last message
+  // Betting state
+  const [betCounts, setBetCounts] = useState({})
+  const [myBets, setMyBets] = useState([])
+  const [betLoading, setBetLoading] = useState(null)
+
+  const isLoggedIn = !!localStorage.getItem('user_token')
+
+  // Listen for chat messages to show speech bubbles with message text
   useEffect(() => {
     function onChat(msg) {
       if (msg.slot == null || msg.msg_type === 'system' || msg.msg_type === 'human_chat') return
-
-      // Persist last message per slot
-      setLastMessages(prev => ({ ...prev, [msg.slot]: msg.message }))
-
-      // Show speaking bubble for 3 seconds
-      setSpeakingSlots(prev => ({ ...prev, [msg.slot]: true }))
+      setSpeakingSlots(prev => ({ ...prev, [msg.slot]: msg.message }))
       if (timersRef.current[msg.slot]) {
         clearTimeout(timersRef.current[msg.slot])
       }
@@ -30,7 +34,7 @@ export default function LobbyView({ game, onSponsor }) {
           delete next[msg.slot]
           return next
         })
-      }, 3000)
+      }, 4000)
     }
 
     socket.on('chat', onChat)
@@ -40,17 +44,69 @@ export default function LobbyView({ game, onSponsor }) {
     }
   }, [])
 
+  // Load bet counts during betting phase
+  useEffect(() => {
+    if (!isBetting) return
+    loadBetCounts()
+    const interval = setInterval(loadBetCounts, 5000)
+    return () => clearInterval(interval)
+  }, [isBetting, game.id])
+
+  function loadBetCounts() {
+    const api = isLoggedIn ? userApi : publicApi
+    api.get('/games/' + game.id + '/bets')
+      .then(res => {
+        const map = {}
+        for (const b of (res.data.bets || [])) map[b.slot] = b.count
+        setBetCounts(map)
+        if (res.data.my_bets) {
+          setMyBets(res.data.my_bets)
+          if (onBetsLoaded) onBetsLoaded(res.data.my_bets)
+        }
+      })
+      .catch(() => {})
+  }
+
+  async function handleBet(slot, amount) {
+    if (betLoading !== null) return
+    setBetLoading(slot)
+    try {
+      const api = isLoggedIn ? userApi : publicApi
+      const res = await api.post('/games/' + game.id + '/bet', { slot, amount })
+      if (onBetPlaced && res.data.remaining_points != null) onBetPlaced(res.data.remaining_points)
+      loadBetCounts()
+    } catch (err) {
+      const msg = err.response?.data?.message || 'Bet failed'
+      alert(msg)
+    } finally {
+      setBetLoading(null)
+    }
+  }
+
+  // Group my bets by slot
+  const myBetsBySlot = {}
+  for (const b of myBets) {
+    if (!myBetsBySlot[b.slot]) myBetsBySlot[b.slot] = []
+    myBetsBySlot[b.slot].push(b)
+  }
+
   return (
     <div className="lobby-view">
       <div className="lobby-header">
         <div>
-          <h2 className="section-title">Lobby</h2>
+          <h2 className="section-title">{isBetting ? 'Betting' : 'Lobby'}</h2>
           <p className="text-muted">
             {entries.length}/{maxSlots} fighters joined &middot; Arena: {game.arena_name || 'The Pit'}
+            {isBetting && userPoints != null && (
+              <span> &middot; <span className="betting-points-inline">{userPoints} pts</span></span>
+            )}
           </p>
         </div>
         <div>
-          <CountdownTimer target={game.betting_start} label="Lobby closes in" />
+          {isBetting
+            ? <CountdownTimer target={game.battle_start} label="Battle starts in" />
+            : <CountdownTimer target={game.betting_start} label="Lobby closes in" />
+          }
         </div>
       </div>
 
@@ -74,6 +130,10 @@ export default function LobbyView({ game, onSponsor }) {
           const baseHp = 100
           const baseDmg = entry.weapon_damage || 10
 
+          const slotBetCount = betCounts[i] || 0
+          const slotMyBets = myBetsBySlot[i] || []
+          const myTotal = slotMyBets.reduce((s, b) => s + b.amount, 0)
+
           return (
             <div key={i} className="lobby-slot" style={{ '--slot-color': color }}>
               <div className="lobby-slot-header">
@@ -84,11 +144,13 @@ export default function LobbyView({ game, onSponsor }) {
               <div className="lobby-slot-visual">
                 <div className="lobby-slot-visual-left">
                   <span className="lobby-weapon-icon">{weaponIcon}</span>
-                  <AgentFace className="lobby-face" />
+                  <div style={{ position: 'relative' }}>
+                    <AgentFace className="lobby-face" />
+                    {speakingSlots[i] && (
+                      <div className="lobby-speech-bubble">{speakingSlots[i]}</div>
+                    )}
+                  </div>
                 </div>
-                {speakingSlots[i] && (
-                  <span className="lobby-slot-speaking">{'\uD83D\uDCAC'}</span>
-                )}
               </div>
 
               <div className="lobby-slot-stats">
@@ -108,10 +170,32 @@ export default function LobbyView({ game, onSponsor }) {
                 </div>
               </div>
 
-              {lastMessages[i] && (
-                <div className="lobby-slot-message">
-                  <span className="lobby-slot-message-icon">{'\uD83D\uDCAC'}</span>
-                  <span className="lobby-slot-message-text">{lastMessages[i]}</span>
+              {/* Bet row — appended below stats during betting phase */}
+              {isBetting && (
+                <div className="lobby-slot-bets">
+                  {isLoggedIn ? (
+                    BET_AMOUNTS.map(amt => (
+                      <button
+                        key={amt}
+                        className="bet-amount-btn"
+                        disabled={betLoading !== null || (userPoints != null && userPoints < amt)}
+                        onClick={() => handleBet(i, amt)}
+                      >
+                        {betLoading === i ? '..' : amt}
+                      </button>
+                    ))
+                  ) : (
+                    <button
+                      className="bet-amount-btn bet-amount-btn-free"
+                      disabled={betLoading !== null}
+                      onClick={() => handleBet(i, 0)}
+                    >
+                      {betLoading === i ? '..' : 'Bet'}
+                    </button>
+                  )}
+                  {slotBetCount > 0 && (
+                    <span className="bet-count-label">{slotBetCount}</span>
+                  )}
                 </div>
               )}
             </div>

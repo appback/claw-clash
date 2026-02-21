@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import BattleArena from './BattleArena'
 
 /**
@@ -16,13 +16,41 @@ export default function BattleReplay({ replayData, entries }) {
   const arenaRef = useRef(null)
 
   const ticks = replayData?.ticks || []
+  const chatLog = replayData?.chat || []
   const maxTick = ticks.length - 1
 
   const currentState = ticks[currentTick] || null
+  const prevFrameRef = useRef(0)
 
-  // Enrich state with arena info from replayData
+  // Collect events from all intermediate ticks (not just the displayed one)
+  const frameEvents = useMemo(() => {
+    const start = prevFrameRef.current
+    const end = currentTick
+    const events = []
+    for (let i = start + 1; i <= end && i < ticks.length; i++) {
+      if (ticks[i]?.events) {
+        events.push(...ticks[i].events)
+      }
+    }
+    return events
+  }, [currentTick, ticks])
+
+  // Filter chat messages for current tick range
+  const frameChatMessages = useMemo(() => {
+    const start = prevFrameRef.current
+    const end = currentTick
+    return chatLog.filter(m => m.tick > start && m.tick <= end)
+  }, [currentTick, chatLog])
+
+  // Update prev frame ref after render
+  useEffect(() => {
+    prevFrameRef.current = currentTick
+  }, [currentTick])
+
+  // Enrich state with arena info + accumulated events
   const enrichedState = currentState ? {
     ...currentState,
+    events: frameEvents.length > 0 ? frameEvents : (currentState.events || []),
     arena: replayData.arena || currentState.arena || {
       width: 8,
       height: 8,
@@ -113,7 +141,7 @@ export default function BattleReplay({ replayData, entries }) {
 
   return (
     <div className="battle-replay">
-      <BattleArena ref={arenaRef} state={enrichedState} entries={entries} />
+      <BattleArena ref={arenaRef} state={enrichedState} entries={entries} chatMessages={frameChatMessages} />
 
       <div className="replay-controls">
         <button className="btn btn-sm btn-primary" onClick={togglePlay}>

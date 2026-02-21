@@ -15,13 +15,16 @@ const POWERUP_ICONS = {
   speed_boost: '\u26A1'
 }
 
-export default function BattleArena({ state, gridWidth, gridHeight, entries }) {
+export default function BattleArena({ state, gridWidth, gridHeight, entries, chatMessages }) {
   const [hitSlots, setHitSlots] = useState(new Set())
   const [attackSlots, setAttackSlots] = useState(new Set())
   const [slashEffects, setSlashEffects] = useState([])
   const [eventLog, setEventLog] = useState([])
+  const [bubbles, setBubbles] = useState({}) // slot -> message
   const prevTick = useRef(null)
   const logContainerRef = useRef(null)
+  const wasAtBottomRef = useRef(true)
+  const bubbleTimers = useRef({})
 
   const width = state?.arena?.width || gridWidth || 8
   const height = state?.arena?.height || gridHeight || 8
@@ -131,14 +134,69 @@ export default function BattleArena({ state, gridWidth, gridHeight, entries }) {
     }
   }, [state?.tick, tickEvents, enrichedAgents])
 
-  // Auto-scroll event log only when user is already near bottom
+  // Speech bubbles from chat messages
+  useEffect(() => {
+    if (!chatMessages || chatMessages.length === 0) return
+    const newBubbles = {}
+    for (const msg of chatMessages) {
+      if (msg.slot != null) {
+        newBubbles[msg.slot] = msg.message
+      }
+    }
+    setBubbles(prev => ({ ...prev, ...newBubbles }))
+
+    // Also inject chat into event log
+    if (state) {
+      const timeSec = Math.floor((state.tick || 0) / 5)
+      const chatEntries = chatMessages
+        .filter(m => m.slot != null)
+        .map((m, i) => ({
+          type: 'chat',
+          slot: m.slot,
+          message: m.message,
+          _id: `chat-${state.tick}-${m.slot}-${i}`,
+          _time: timeSec
+        }))
+      if (chatEntries.length > 0) {
+        setEventLog(prev => {
+          const combined = [...prev, ...chatEntries]
+          return combined.length > 200 ? combined.slice(-200) : combined
+        })
+      }
+    }
+
+    // Clear bubbles after 3 seconds
+    const slotsToClear = Object.keys(newBubbles)
+    if (slotsToClear.length > 0) {
+      for (const slot of slotsToClear) {
+        if (bubbleTimers.current[slot]) clearTimeout(bubbleTimers.current[slot])
+        bubbleTimers.current[slot] = setTimeout(() => {
+          setBubbles(prev => {
+            const next = { ...prev }
+            delete next[slot]
+            return next
+          })
+        }, 3000)
+      }
+    }
+  }, [chatMessages])
+
+  // Track whether user is near bottom before new entries are rendered
   useEffect(() => {
     const container = logContainerRef.current
-    if (container) {
-      const isNearBottom = container.scrollTop + container.clientHeight >= container.scrollHeight - 50
-      if (isNearBottom) {
-        container.scrollTop = container.scrollHeight
-      }
+    if (!container) return
+    function onScroll() {
+      wasAtBottomRef.current = container.scrollTop + container.clientHeight >= container.scrollHeight - 50
+    }
+    container.addEventListener('scroll', onScroll)
+    return () => container.removeEventListener('scroll', onScroll)
+  }, [])
+
+  // Auto-scroll event log when new entries arrive (if user was at bottom)
+  useEffect(() => {
+    const container = logContainerRef.current
+    if (container && wasAtBottomRef.current) {
+      container.scrollTop = container.scrollHeight
     }
   }, [eventLog.length])
 
@@ -224,6 +282,7 @@ export default function BattleArena({ state, gridWidth, gridHeight, entries }) {
             cellSize={cellSize}
             isHit={hitSlots.has(agent.slot)}
             isAttacking={attackSlots.has(agent.slot)}
+            bubble={bubbles[agent.slot] || null}
           />
         ))}
 
@@ -293,6 +352,8 @@ function formatEvent(e) {
       return `\uD83C\uDF81 #${e.slot} picked up ${e.powerup}`
     case 'powerup_destroyed':
       return `\uD83D\uDCA8 ${e.powerup} destroyed by ring`
+    case 'chat':
+      return `\uD83D\uDCAC #${e.slot}: "${e.message}"`
     default:
       return e.type
   }
