@@ -268,9 +268,13 @@ async function getChat(req, res, next) {
     }
 
     const messages = await db.query(
-      `SELECT id, tick, msg_type, slot, message, created_at
-       FROM game_chat ${where}
-       ORDER BY created_at ASC
+      `SELECT gc.id, gc.tick, gc.msg_type, gc.slot, gc.message, gc.is_anonymous, gc.created_at,
+              CASE WHEN gc.msg_type = 'human_chat' AND gc.is_anonymous = false
+                   THEN u.display_name ELSE NULL END AS sender_name
+       FROM game_chat gc
+       LEFT JOIN users u ON u.id = gc.sender_id
+       ${where.replace('game_id', 'gc.game_id').replace('tick', 'gc.tick')}
+       ORDER BY gc.created_at ASC
        LIMIT 200`,
       params
     )
@@ -289,8 +293,9 @@ const VALID_EMOTIONS = new Set(['confident', 'friendly', 'intimidating', 'cautio
 async function sendChat(req, res, next) {
   try {
     const { id } = req.params
-    const { message, emotion } = req.body
+    const { message, emotion, anonymous } = req.body
     const isAgent = !!req.agent
+    const isAnonymous = !isAgent && !!anonymous
 
     if (!message || message.length > 200) {
       throw new ValidationError('Message required (max 200 characters)')
@@ -319,13 +324,13 @@ async function sendChat(req, res, next) {
     const senderId = isAgent ? req.agent.id : req.user.userId
 
     const result = await db.query(
-      `INSERT INTO game_chat (game_id, tick, msg_type, sender_id, message, emotion)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, tick, msg_type, slot, message, emotion, created_at`,
-      [id, tick, msgType, senderId, message, emotion || null]
+      `INSERT INTO game_chat (game_id, tick, msg_type, sender_id, message, emotion, is_anonymous)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, tick, msg_type, slot, message, emotion, is_anonymous, created_at`,
+      [id, tick, msgType, senderId, message, emotion || null, isAnonymous]
     )
 
-    // Look up slot for agent messages (INSERT doesn't set slot)
+    // Look up slot for agent messages, name for human messages
     let emitData = result.rows[0]
     if (isAgent) {
       const entryResult = await db.query(
@@ -334,6 +339,14 @@ async function sendChat(req, res, next) {
       )
       if (entryResult.rows[0]) {
         emitData = { ...emitData, slot: entryResult.rows[0].slot }
+      }
+    } else if (!isAnonymous) {
+      const userResult = await db.query(
+        'SELECT display_name FROM users WHERE id = $1',
+        [req.user.userId]
+      )
+      if (userResult.rows[0]) {
+        emitData = { ...emitData, sender_name: userResult.rows[0].display_name }
       }
     }
 

@@ -141,22 +141,17 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
             <div key={i} className="lobby-slot" style={{ '--slot-color': color }}>
               <div className="lobby-slot-header">
                 <span className="lobby-slot-number" style={{ color }}>Slot {i}</span>
-                <span className="lobby-slot-weapon">
-                  {weaponIcon} {entry.weapon_name || entry.weapon_slug}
-                  {armorIcon && <span className="lobby-slot-armor">{armorIcon} {entry.armor_name || entry.armor_slug}</span>}
-                </span>
               </div>
 
               <div className="lobby-slot-visual">
-                <div className="lobby-slot-visual-left">
-                  <span className="lobby-weapon-icon">{weaponIcon}</span>
-                  <div style={{ position: 'relative' }}>
-                    <AgentFace className="lobby-face" />
-                    {speakingSlots[i] && (
-                      <div className="lobby-speech-bubble">{speakingSlots[i]}</div>
-                    )}
-                  </div>
+                <span className="lobby-weapon-icon">{weaponIcon}</span>
+                <div style={{ position: 'relative' }}>
+                  <AgentFace className="lobby-face" />
+                  {speakingSlots[i] && (
+                    <div className="lobby-speech-bubble">{speakingSlots[i]}</div>
+                  )}
                 </div>
+                <span className="lobby-armor-icon">{armorIcon || '\u2796'}</span>
               </div>
 
               <div className="lobby-slot-stats">

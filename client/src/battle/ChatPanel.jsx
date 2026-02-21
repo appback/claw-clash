@@ -7,6 +7,7 @@ export default function ChatPanel({ gameId, gameState, userPoints, myBets }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [anonymous, setAnonymous] = useState(false)
   const scrollRef = useRef(null)
   const seenIdsRef = useRef(new Set())
   const initialLoadRef = useRef(true)
@@ -63,7 +64,7 @@ export default function ChatPanel({ gameId, gameState, userPoints, myBets }) {
 
     setSending(true)
     try {
-      await userApi.post('/games/' + gameId + '/chat', { message: input.trim() })
+      await userApi.post('/games/' + gameId + '/chat', { message: input.trim(), anonymous })
       // Message will arrive via WebSocket broadcast
       setInput('')
     } catch {
@@ -98,7 +99,8 @@ export default function ChatPanel({ gameId, gameState, userPoints, myBets }) {
             <div key={msg.id} className={'chat-msg chat-msg-' + msg.msg_type}>
               <span className="chat-msg-sender">
                 {msg.msg_type === 'system' ? '[System]'
-                  : msg.msg_type === 'human_chat' ? '[Spectator]'
+                  : msg.msg_type === 'human_chat'
+                    ? (msg.sender_name ? `[${msg.sender_name}]` : '[Spectator]')
                   : msg.slot != null ? `[Slot ${msg.slot}]`
                   : '[Unknown]'}
               </span>
@@ -110,12 +112,20 @@ export default function ChatPanel({ gameId, gameState, userPoints, myBets }) {
 
       {isActive && isLoggedIn && (
         <form className="chat-input-form" onSubmit={handleSend}>
+          <label className="chat-anon-toggle" title="Send anonymously">
+            <input
+              type="checkbox"
+              checked={anonymous}
+              onChange={e => setAnonymous(e.target.checked)}
+            />
+            <span className="chat-anon-label">Anon</span>
+          </label>
           <input
             className="chat-input"
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
-            placeholder="Send a message..."
+            placeholder={anonymous ? 'Send anonymously...' : 'Send a message...'}
             maxLength={200}
             disabled={sending}
           />

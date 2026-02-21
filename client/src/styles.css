@@ -1597,15 +1597,10 @@ a:hover {
 .lobby-slot-visual {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  gap: 4px;
   height: 64px;
   margin-bottom: 8px;
-}
-
-.lobby-slot-visual-left {
-  display: flex;
-  align-items: center;
-  gap: 4px;
 }
 
 .lobby-face {
@@ -1615,7 +1610,10 @@ a:hover {
 
 .lobby-weapon-icon {
   font-size: 3rem;
-  right: calc(50% - 20px);
+}
+
+.lobby-armor-icon {
+  font-size: 3rem;
 }
 
 /* ========================================
@@ -1782,6 +1780,27 @@ a:hover {
 .chat-input:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+.chat-anon-toggle {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.chat-anon-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.chat-anon-label {
+  font-size: 0.6875rem;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .chat-login-hint {
