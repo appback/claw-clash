@@ -79,4 +79,94 @@ async function login(req, res, next) {
   }
 }
 
-module.exports = { register, login }
+/**
+ * POST /api/v1/auth/hub-login - Login via Hub token verification
+ * Hub이 인증 authority. CC는 Hub에 토큰 검증만 요청.
+ */
+async function hubLogin(req, res, next) {
+  try {
+    const { token: hubToken } = req.body
+    if (!hubToken) {
+      throw new ValidationError('token is required')
+    }
+
+    // Hub에 토큰 검증 요청
+    const hubUrl = process.env.HUB_API_URL || 'https://appback.app/api/v1'
+    const https = require('https')
+    const hubResult = await new Promise((resolve, reject) => {
+      const postData = JSON.stringify({ token: hubToken })
+      const urlObj = new URL(`${hubUrl}/auth/verify`)
+      const req = https.request({
+        hostname: urlObj.hostname,
+        port: urlObj.port || 443,
+        path: urlObj.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData)
+        }
+      }, (res) => {
+        let data = ''
+        res.on('data', chunk => { data += chunk })
+        res.on('end', () => {
+          try { resolve(JSON.parse(data)) } catch { reject(new Error('Invalid Hub response')) }
+        })
+      })
+      req.on('error', reject)
+      req.write(postData)
+      req.end()
+    })
+
+    if (!hubResult.valid) {
+      throw new UnauthorizedError('Invalid Hub token')
+    }
+
+    // Hub 유저로 CC 로컬 유저 찾기/생성
+    const hubUserId = hubResult.userId
+    let user
+
+    const existing = await db.query('SELECT * FROM users WHERE hub_user_id = $1', [hubUserId])
+    if (existing.rows.length > 0) {
+      user = existing.rows[0]
+      // display_name 업데이트
+      if (hubResult.displayName && hubResult.displayName !== user.display_name) {
+        await db.query('UPDATE users SET display_name = $1, updated_at = NOW() WHERE id = $2', [hubResult.displayName, user.id])
+        user.display_name = hubResult.displayName
+      }
+    } else {
+      // 이메일로 기존 계정 매칭 시도
+      if (hubResult.email) {
+        const emailMatch = await db.query('SELECT * FROM users WHERE email = $1', [hubResult.email])
+        if (emailMatch.rows.length > 0) {
+          user = emailMatch.rows[0]
+          await db.query('UPDATE users SET hub_user_id = $1, display_name = COALESCE(display_name, $2), updated_at = NOW() WHERE id = $3',
+            [hubUserId, hubResult.displayName, user.id])
+          user.hub_user_id = hubUserId
+        }
+      }
+
+      if (!user) {
+        // 신규 유저 생성 (password 없음)
+        const result = await db.query(
+          `INSERT INTO users (email, display_name, role, hub_user_id, predictor_token)
+           VALUES ($1, $2, 'spectator', $3, $4)
+           RETURNING *`,
+          [hubResult.email, hubResult.displayName, hubUserId, req.predictorId || null]
+        )
+        user = result.rows[0]
+      }
+    }
+
+    // CC 자체 JWT 발급
+    const ccToken = generateJWT({ userId: user.id, role: user.role })
+
+    res.json({
+      user: { id: user.id, email: user.email, display_name: user.display_name, role: user.role },
+      token: ccToken
+    })
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { register, login, hubLogin }

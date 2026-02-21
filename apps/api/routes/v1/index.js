@@ -18,12 +18,21 @@ const predictionsController = require('../../controllers/v1/predictions')
 const leaderboardController = require('../../controllers/v1/leaderboard')
 const statsController = require('../../controllers/v1/stats')
 const adminController = require('../../controllers/v1/admin')
+const devController = require('../../controllers/v1/dev')
+
+// ==========================================
+// Dev tools (non-production only)
+// ==========================================
+if (process.env.NODE_ENV !== 'production') {
+  router.post('/dev/test-game', devController.testGame)
+}
 
 // ==========================================
 // Auth (public)
 // ==========================================
 router.post('/auth/register', authLimiter, authController.register)
 router.post('/auth/login', authLimiter, authController.login)
+router.post('/auth/hub-login', authLimiter, authController.hubLogin)
 
 // ==========================================
 // Agent Registration (public, rate-limited)
