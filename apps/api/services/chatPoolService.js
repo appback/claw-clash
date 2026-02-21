@@ -14,6 +14,8 @@ function setIO(socketIO) { io = socketIO }
 
 const DEFAULT_POOL = {
   battle_start: ["Let's fight!", "Ready for battle!", "Here we go!"],
+  lobby: ["Who wants to go first?", "I'm warmed up!", "This'll be fun.", "Don't blink.", "Bring it on!"],
+  taunt: ["You don't stand a chance!", "Too slow!", "Is that your best?", "Watch and learn.", "Easy prey!"],
   kill: ["Got one!", "Down you go!", "Too easy!"],
   death: ["I'll be back...", "Good fight!", "Next time..."],
   first_blood: ["First blood!", "Opening kill!", "That's mine!"],
@@ -151,12 +153,31 @@ async function triggerAutoChat(gameId, category) {
        WHERE acp.game_id = $1`,
       [gameId]
     )
-    if (poolResult.rows.length === 0) return
+
+    let agents
+    if (poolResult.rows.length > 0) {
+      agents = poolResult.rows.map(r => ({
+        agent_id: r.agent_id,
+        slot: r.slot,
+        responses: typeof r.responses === 'string' ? JSON.parse(r.responses) : r.responses
+      }))
+    } else {
+      // Fallback: use DEFAULT_POOL for all entries
+      const entries = await db.query(
+        'SELECT agent_id, slot FROM game_entries WHERE game_id = $1',
+        [gameId]
+      )
+      if (entries.rows.length === 0) return
+      agents = entries.rows.map(e => ({
+        agent_id: e.agent_id,
+        slot: e.slot,
+        responses: DEFAULT_POOL
+      }))
+    }
 
     // Pick a random agent
-    const agent = poolResult.rows[Math.floor(Math.random() * poolResult.rows.length)]
-    const responses = typeof agent.responses === 'string' ? JSON.parse(agent.responses) : agent.responses
-    const messages = responses[category]
+    const agent = agents[Math.floor(Math.random() * agents.length)]
+    const messages = agent.responses[category]
     if (!messages || messages.length === 0) return
 
     const message = messages[Math.floor(Math.random() * messages.length)]

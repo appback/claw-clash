@@ -66,8 +66,10 @@ function startScheduler(socketIO) {
       const games = await db.query(
         "SELECT id FROM games WHERE state IN ('lobby', 'betting')"
       )
+      const LOBBY_CATEGORIES = ['lobby', 'taunt', 'battle_start']
       for (const game of games.rows) {
-        await chatPoolService.triggerAutoChat(game.id, 'battle_start')
+        const cat = LOBBY_CATEGORIES[Math.floor(Math.random() * LOBBY_CATEGORIES.length)]
+        await chatPoolService.triggerAutoChat(game.id, cat)
       }
     } catch (err) {
       console.error('[Scheduler] Error in auto-chat:', err)

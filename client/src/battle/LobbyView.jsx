@@ -83,8 +83,8 @@ export default function LobbyView({ game, onSponsor }) {
 
               <div className="lobby-slot-visual">
                 <div className="lobby-slot-visual-left">
-                  <AgentFace className="lobby-face" />
                   <span className="lobby-weapon-icon">{weaponIcon}</span>
+                  <AgentFace className="lobby-face" />
                 </div>
                 {speakingSlots[i] && (
                   <span className="lobby-slot-speaking">{'\uD83D\uDCAC'}</span>
