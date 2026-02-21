@@ -18,10 +18,11 @@ let io = null
  */
 function startScheduler(socketIO) {
   io = socketIO || null
-  // Inject io into battleEngine and chatPoolService
+  // Inject io into services
   if (io) {
     battleEngine.setIO(io)
     chatPoolService.setIO(io)
+    matchmaker.setIo(io)
   }
   // Recover stuck battles from previous crash/restart
   recoverStuckBattles().catch(err => {

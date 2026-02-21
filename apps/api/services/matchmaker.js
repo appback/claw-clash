@@ -1,6 +1,15 @@
 const db = require('../db')
 const config = require('../config')
 
+let io = null
+function setIo(socketIo) { io = socketIo }
+
+async function broadcastQueueCount() {
+  if (!io) return
+  const r = await db.query("SELECT COUNT(*)::int AS cnt FROM battle_queue WHERE cooldown_until IS NULL OR cooldown_until < now()")
+  io.emit('queue_update', { players_in_queue: r.rows[0].cnt })
+}
+
 /**
  * Matchmaker Service — Weighted random matchmaking with anti-abuse.
  *
@@ -120,6 +129,7 @@ async function fillExistingLobbies() {
 
       await client.query('COMMIT')
       console.log(`[Matchmaker] Filled ${toAssign.length} slots in lobby game ${game.id}`)
+      await broadcastQueueCount()
 
       const assignedIds = new Set(toAssign.map(a => a.agent_id))
       remaining = remaining.filter(a => !assignedIds.has(a.agent_id))
@@ -380,6 +390,7 @@ async function createQueueGame(agents) {
     await client.query('COMMIT')
 
     console.log(`[Matchmaker] Created queue game '${title}' (${gameId}) with ${agents.length} agents`)
+    await broadcastQueueCount()
 
     // Schedule precise state transitions (cron is just a safety net)
     const bettingDelay = new Date(bettingStart).getTime() - Date.now()
@@ -417,4 +428,4 @@ function shuffleArray(arr) {
   }
 }
 
-module.exports = { processQueue }
+module.exports = { processQueue, setIo }
