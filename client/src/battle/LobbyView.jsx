@@ -7,15 +7,19 @@ export default function LobbyView({ game, onSponsor }) {
   const entries = game.entries || []
   const maxSlots = game.max_entries || 8
   const [speakingSlots, setSpeakingSlots] = useState({})
+  const [lastMessages, setLastMessages] = useState({})
   const timersRef = useRef({})
 
-  // Listen for chat messages to show speech bubbles
+  // Listen for chat messages to show speech bubbles + persist last message
   useEffect(() => {
     function onChat(msg) {
       if (msg.slot == null || msg.msg_type === 'system' || msg.msg_type === 'human_chat') return
-      setSpeakingSlots(prev => ({ ...prev, [msg.slot]: true }))
 
-      // Clear previous timer for this slot
+      // Persist last message per slot
+      setLastMessages(prev => ({ ...prev, [msg.slot]: msg.message }))
+
+      // Show speaking bubble for 3 seconds
+      setSpeakingSlots(prev => ({ ...prev, [msg.slot]: true }))
       if (timersRef.current[msg.slot]) {
         clearTimeout(timersRef.current[msg.slot])
       }
@@ -77,10 +81,12 @@ export default function LobbyView({ game, onSponsor }) {
               </div>
 
               <div className="lobby-slot-visual">
-                <span className="lobby-crayfish-icon">{'\uD83E\uDD9E'}</span>
-                <span className="lobby-weapon-overlay">{weaponIcon}</span>
+                <div className="lobby-slot-visual-left">
+                  <span className="lobby-crayfish-icon">{'\uD83E\uDD9E'}</span>
+                  <span className="lobby-weapon-icon">{weaponIcon}</span>
+                </div>
                 {speakingSlots[i] && (
-                  <span className="lobby-slot-speaking" title="Speaking...">{'\uD83D\uDCAC'}</span>
+                  <span className="lobby-slot-speaking">{'\uD83D\uDCAC'}</span>
                 )}
               </div>
 
@@ -100,6 +106,13 @@ export default function LobbyView({ game, onSponsor }) {
                   </span>
                 </div>
               </div>
+
+              {lastMessages[i] && (
+                <div className="lobby-slot-message">
+                  <span className="lobby-slot-message-icon">{'\uD83D\uDCAC'}</span>
+                  <span className="lobby-slot-message-text">{lastMessages[i]}</span>
+                </div>
+              )}
             </div>
           )
         })}
