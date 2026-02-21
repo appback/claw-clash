@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react'
 
-function calcRemaining(target) {
-  const diff = new Date(target) - Date.now()
+function calcRemaining(target, offset) {
+  const now = Date.now() + (offset || 0)
+  const diff = new Date(target) - now
   if (diff <= 0) return { h: 0, m: 0, s: 0, expired: true }
   return {
     h: Math.floor(diff / 3600000),
@@ -11,13 +12,13 @@ function calcRemaining(target) {
   }
 }
 
-export default function CountdownTimer({ target }) {
-  const [time, setTime] = useState(() => calcRemaining(target))
+export default function CountdownTimer({ target, serverOffset }) {
+  const [time, setTime] = useState(() => calcRemaining(target, serverOffset))
 
   useEffect(() => {
-    const id = setInterval(() => setTime(calcRemaining(target)), 1000)
+    const id = setInterval(() => setTime(calcRemaining(target, serverOffset)), 1000)
     return () => clearInterval(id)
-  }, [target])
+  }, [target, serverOffset])
 
   if (time.expired) {
     return <span className="text-muted">Started</span>

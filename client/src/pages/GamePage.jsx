@@ -25,6 +25,7 @@ export default function GamePage() {
   const [showReplay, setShowReplay] = useState(false)
   const [userPoints, setUserPoints] = useState(null)
   const [myBets, setMyBets] = useState([])
+  const [serverOffset, setServerOffset] = useState(0)
 
   const isBattle = game?.state === 'battle'
   const { state: liveState, error: liveError, viewers } = useBattleState(id, isBattle)
@@ -92,6 +93,9 @@ export default function GamePage() {
   function loadGame() {
     publicApi.get('/games/' + id)
       .then(res => {
+        if (res.data.server_time) {
+          setServerOffset(new Date(res.data.server_time).getTime() - Date.now())
+        }
         setGame(res.data)
         if (['ended', 'archived'].includes(res.data.state)) {
           publicApi.get('/games/' + id + '/replay')
@@ -144,7 +148,7 @@ export default function GamePage() {
           <div style={{ fontSize: '3rem', marginBottom: '16px' }}>{'\u23F3'}</div>
           <h2>Game Scheduled</h2>
           <div className="mt-md">
-            <CountdownTimer target={game.lobby_start} label="Lobby opens in" />
+            <CountdownTimer target={game.lobby_start} serverOffset={serverOffset} />
           </div>
         </div>
       )}
@@ -156,6 +160,7 @@ export default function GamePage() {
             <LobbyView
               game={game}
               onSponsor={isLoggedIn ? handleSponsor : null}
+              serverOffset={serverOffset}
             />
           </div>
           <div className="game-sidebar">
@@ -174,6 +179,7 @@ export default function GamePage() {
               userPoints={userPoints}
               onBetPlaced={(remaining) => setUserPoints(remaining)}
               onBetsLoaded={setMyBets}
+              serverOffset={serverOffset}
             />
           </div>
           <div className="game-sidebar">

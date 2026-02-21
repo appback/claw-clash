@@ -7,7 +7,7 @@ import socket from '../socket'
 
 const BET_AMOUNTS = [1, 10, 100]
 
-export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBetPlaced, onBetsLoaded }) {
+export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBetPlaced, onBetsLoaded, serverOffset }) {
   const entries = game.entries || []
   const maxSlots = game.max_entries || 8
   const [speakingSlots, setSpeakingSlots] = useState({})
@@ -104,8 +104,8 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
         </div>
         <div>
           {isBetting
-            ? <CountdownTimer target={game.battle_start} label="Battle starts in" />
-            : <CountdownTimer target={game.betting_start} label="Lobby closes in" />
+            ? <CountdownTimer target={game.battle_start} serverOffset={serverOffset} />
+            : <CountdownTimer target={game.betting_start} serverOffset={serverOffset} />
           }
         </div>
       </div>

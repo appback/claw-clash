@@ -44,7 +44,9 @@ async function list(req, res, next) {
       [...params, limit, offset]
     )
 
-    res.json(formatPaginatedResponse(result.rows, total, page, limit))
+    const resp = formatPaginatedResponse(result.rows, total, page, limit)
+    resp.server_time = new Date().toISOString()
+    res.json(resp)
   } catch (err) {
     next(err)
   }
@@ -117,6 +119,7 @@ async function get(req, res, next) {
 
     res.json({
       ...game,
+      server_time: new Date().toISOString(),
       entries: entries.rows.map(e => ({
         ...e,
         sponsorship: sponsorMap[e.slot] || { weapon_boost: 0, hp_boost: 0, sponsor_count: 0 }
