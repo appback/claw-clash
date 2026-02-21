@@ -23,22 +23,12 @@ export default function BattleArena({ state, gridWidth, gridHeight, entries }) {
   const prevTick = useRef(null)
   const logContainerRef = useRef(null)
 
-  if (!state) {
-    return (
-      <div className="battle-arena-container">
-        <div className="empty-state">
-          <div className="empty-state-text">Waiting for battle data...</div>
-        </div>
-      </div>
-    )
-  }
-
-  const width = state.arena?.width || gridWidth || 8
-  const height = state.arena?.height || gridHeight || 8
-  const terrain = state.arena?.terrain || []
-  const agents = state.agents || []
-  const shrinkPhase = state.shrink_phase || state.shrinkPhase || 0
-  const powerups = state.powerups || []
+  const width = state?.arena?.width || gridWidth || 8
+  const height = state?.arena?.height || gridHeight || 8
+  const terrain = state?.arena?.terrain || []
+  const agents = state?.agents || []
+  const shrinkPhase = state?.shrink_phase || state?.shrinkPhase || 0
+  const powerups = state?.powerups || []
 
   const cellSize = 56
 
@@ -77,11 +67,12 @@ export default function BattleArena({ state, gridWidth, gridHeight, entries }) {
   }, [width, height, terrain, shrinkPhase])
 
   // Filter out noise events (turn, move) for the event feed
-  const allEvents = state.last_events || state.events || []
+  const allEvents = state?.last_events || state?.events || []
   const tickEvents = allEvents.filter(e => e.type !== 'turn' && e.type !== 'move_blocked')
 
   // Detect hit/attack events for animations + accumulate event log
   useEffect(() => {
+    if (!state) return
     const currentTick = state.tick
     if (prevTick.current === currentTick) return
     prevTick.current = currentTick
@@ -138,7 +129,7 @@ export default function BattleArena({ state, gridWidth, gridHeight, entries }) {
       }, 400)
       return () => clearTimeout(timer)
     }
-  }, [state.tick, tickEvents, enrichedAgents])
+  }, [state?.tick, tickEvents, enrichedAgents])
 
   // Auto-scroll event log only when user is already near bottom
   useEffect(() => {
@@ -150,6 +141,16 @@ export default function BattleArena({ state, gridWidth, gridHeight, entries }) {
       }
     }
   }, [eventLog.length])
+
+  if (!state) {
+    return (
+      <div className="battle-arena-container">
+        <div className="empty-state">
+          <div className="empty-state-text">Waiting for battle data...</div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="battle-arena-container">
