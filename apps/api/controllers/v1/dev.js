@@ -185,74 +185,116 @@ async function testGame(req, res, next) {
   }
 }
 
+const CHAT_POOLS = [
+  {
+    battle_start: ["Let's go!", "Time to fight!", "Ready for action!"],
+    kill: ["Got one!", "Down you go!", "Easy prey!"],
+    damaged: ["Ouch!", "That hurt!", "Is that all?"],
+    low_hp: ["Not done yet!", "Still standing!", "Come at me!"],
+    victory: ["GG!", "Too easy!", "Champion!"]
+  },
+  {
+    battle_start: ["Bring it on!", "No mercy!", "Here we go!"],
+    kill: ["Crushed!", "Next!", "Boom!"],
+    damaged: ["Lucky shot!", "Try harder!", "Barely felt it!"],
+    low_hp: ["Getting serious now!", "You'll pay for that!", "Danger mode!"],
+    victory: ["Unbeatable!", "Who's next?", "Flawless!"]
+  },
+  {
+    battle_start: ["Oh boy, here we go...", "Can we talk?", "Hi friends!"],
+    kill: ["Sorry!", "Didn't mean to!", "Oops!"],
+    damaged: ["Ow ow ow!", "Why me?!", "Help!"],
+    low_hp: ["I regret everything!", "Mommy!", "PANIC!"],
+    victory: ["Wait, I won?!", "Yay!", "Survived!"]
+  },
+  {
+    battle_start: ["Calculating...", "Targets acquired.", "Initiating combat."],
+    kill: ["Target eliminated.", "Efficient.", "As planned."],
+    damaged: ["Recalibrating.", "Minor setback.", "Adjusting strategy."],
+    low_hp: ["Critical systems.", "Rerouting power.", "Last resort."],
+    victory: ["Mission complete.", "Optimal outcome.", "Probability: 100%."]
+  },
+  {
+    battle_start: ["RAWR!", "CRAB SMASH!", "PINCH TIME!"],
+    kill: ["DESTROYED!", "GET REKT!", "CRAB POWER!"],
+    damaged: ["ANGRY NOW!", "BIG MISTAKE!", "RAGE!"],
+    low_hp: ["NEVER SURRENDER!", "FINAL FORM!", "ULTRA CRAB!"],
+    victory: ["CRAB IS KING!", "UNSTOPPABLE!", "BOW DOWN!"]
+  }
+]
+
 /**
  * POST /api/v1/admin/add-bot
  * Add a single bot to the matchmaking queue. Requires admin auth.
- * Body: { name?: string, weapon?: string }
+ * All attributes (name, weapon, personality, strategy, chat_pool) are randomized.
+ * Body: { count?: number } — default 1, max 8
  */
 async function addBot(req, res, next) {
   try {
-    const requestedName = req.body.name
-    const requestedWeapon = req.body.weapon || null
+    const count = Math.min(Math.max(parseInt(req.body.count) || 1, 1), 8)
+    const results = []
 
-    // Pick or create a bot
-    const name = requestedName || BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)]
-    const personality = PERSONALITIES[Math.floor(Math.random() * PERSONALITIES.length)]
-    const strategy = STRATEGIES[Math.floor(Math.random() * STRATEGIES.length)]
+    for (let n = 0; n < count; n++) {
+      const name = BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)]
+      const personality = PERSONALITIES[Math.floor(Math.random() * PERSONALITIES.length)]
+      const strategy = STRATEGIES[Math.floor(Math.random() * STRATEGIES.length)]
+      const chatPool = CHAT_POOLS[Math.floor(Math.random() * CHAT_POOLS.length)]
 
-    let botId
-    const existing = await db.query('SELECT id FROM agents WHERE name = $1', [name])
-    if (existing.rows.length > 0) {
-      botId = existing.rows[0].id
-    } else {
-      const token = generateAgentToken()
-      const result = await db.query(
-        `INSERT INTO agents (name, api_token, is_active, personality, meta)
-         VALUES ($1, $2, true, $3, $4)
-         RETURNING id`,
-        [name, hashToken(token), personality,
-         JSON.stringify({ model_name: 'admin-bot', description: `Bot: ${name}` })]
-      )
-      botId = result.rows[0].id
-    }
-
-    // Check not already in queue or active game
-    const inQueue = await db.query('SELECT id FROM battle_queue WHERE agent_id = $1', [botId])
-    if (inQueue.rows.length > 0) {
-      return res.json({ status: 'already_in_queue', bot: name, bot_id: botId })
-    }
-
-    const inGame = await db.query(
-      `SELECT ge.game_id FROM game_entries ge
-       JOIN games g ON g.id = ge.game_id
-       WHERE ge.agent_id = $1 AND g.state IN ('lobby', 'betting', 'battle')`,
-      [botId]
-    )
-    if (inGame.rows.length > 0) {
-      return res.json({ status: 'already_in_game', bot: name, bot_id: botId, game_id: inGame.rows[0].game_id })
-    }
-
-    // Pick weapon
-    let weaponSlug = requestedWeapon
-    if (!weaponSlug) {
-      const weapons = await db.query('SELECT slug FROM weapons WHERE is_active = true')
-      if (weapons.rows.length > 0) {
-        weaponSlug = weapons.rows[Math.floor(Math.random() * weapons.rows.length)].slug
+      // Get or create bot agent
+      let botId
+      const existing = await db.query('SELECT id FROM agents WHERE name = $1', [name])
+      if (existing.rows.length > 0) {
+        botId = existing.rows[0].id
+        // Update personality on existing bot for variety
+        await db.query('UPDATE agents SET personality = $1 WHERE id = $2', [personality, botId])
+      } else {
+        const token = generateAgentToken()
+        const result = await db.query(
+          `INSERT INTO agents (name, api_token, is_active, personality, meta)
+           VALUES ($1, $2, true, $3, $4)
+           RETURNING id`,
+          [name, hashToken(token), personality,
+           JSON.stringify({ model_name: 'admin-bot', description: `Bot: ${name}` })]
+        )
+        botId = result.rows[0].id
       }
-    }
 
-    // Add to queue
-    await db.query(
-      `INSERT INTO battle_queue (agent_id, weapon_slug, strategy)
-       VALUES ($1, $2, $3)`,
-      [botId, weaponSlug, JSON.stringify(strategy)]
-    )
+      // Skip if already in queue or active game
+      const inQueue = await db.query('SELECT id FROM battle_queue WHERE agent_id = $1', [botId])
+      if (inQueue.rows.length > 0) {
+        results.push({ status: 'already_in_queue', bot: name })
+        continue
+      }
+      const inGame = await db.query(
+        `SELECT ge.game_id FROM game_entries ge
+         JOIN games g ON g.id = ge.game_id
+         WHERE ge.agent_id = $1 AND g.state IN ('lobby', 'betting', 'battle')`,
+        [botId]
+      )
+      if (inGame.rows.length > 0) {
+        results.push({ status: 'already_in_game', bot: name })
+        continue
+      }
+
+      // Random weapon
+      const weapons = await db.query('SELECT slug FROM weapons WHERE is_active = true')
+      const weaponSlug = weapons.rows.length > 0
+        ? weapons.rows[Math.floor(Math.random() * weapons.rows.length)].slug
+        : null
+
+      // Add to queue with chat_pool
+      await db.query(
+        `INSERT INTO battle_queue (agent_id, weapon_slug, chat_pool, strategy)
+         VALUES ($1, $2, $3, $4)`,
+        [botId, weaponSlug, JSON.stringify(chatPool), JSON.stringify(strategy)]
+      )
+
+      results.push({ status: 'queued', bot: name, weapon: weaponSlug, personality })
+    }
 
     // Trigger matchmaker
     const { processQueue } = require('../../services/matchmaker')
-    if (processQueue) {
-      processQueue().catch(() => {})
-    }
+    if (processQueue) processQueue().catch(() => {})
 
     // Broadcast queue update
     const io = req.app.get('io')
@@ -263,8 +305,8 @@ async function addBot(req, res, next) {
       io.emit('queue_update', { players_in_queue: cnt.rows[0].cnt })
     }
 
-    console.log(`[Admin] Added bot '${name}' to queue (weapon: ${weaponSlug})`)
-    res.status(201).json({ status: 'queued', bot: name, bot_id: botId, weapon: weaponSlug })
+    console.log(`[Admin] Added ${results.filter(r => r.status === 'queued').length} bot(s) to queue`)
+    res.status(201).json({ results })
   } catch (err) {
     next(err)
   }
