@@ -26,7 +26,7 @@ async function register(req, res, next) {
     const result = await db.query(
       `INSERT INTO users (email, password_hash, display_name, role, predictor_token)
        VALUES ($1, $2, $3, 'spectator', $4)
-       RETURNING id, email, display_name, role, created_at`,
+       RETURNING id, email, display_name, role, points, created_at`,
       [email.toLowerCase(), passwordHash, display_name || null, req.predictorId || null]
     )
 
@@ -34,7 +34,7 @@ async function register(req, res, next) {
     const token = generateJWT({ userId: user.id, role: user.role })
 
     res.status(201).json({
-      user: { id: user.id, email: user.email, display_name: user.display_name, role: user.role },
+      user: { id: user.id, email: user.email, display_name: user.display_name, role: user.role, points: parseInt(user.points) },
       token
     })
   } catch (err) {
@@ -54,7 +54,7 @@ async function login(req, res, next) {
     }
 
     const result = await db.query(
-      'SELECT id, email, password_hash, display_name, role FROM users WHERE email = $1',
+      'SELECT id, email, password_hash, display_name, role, points FROM users WHERE email = $1',
       [email.toLowerCase()]
     )
 
@@ -71,7 +71,7 @@ async function login(req, res, next) {
     const token = generateJWT({ userId: user.id, role: user.role })
 
     res.json({
-      user: { id: user.id, email: user.email, display_name: user.display_name, role: user.role },
+      user: { id: user.id, email: user.email, display_name: user.display_name, role: user.role, points: parseInt(user.points) },
       token
     })
   } catch (err) {
@@ -123,15 +123,17 @@ async function hubLogin(req, res, next) {
 
     // Hub 유저로 CC 로컬 유저 찾기/생성
     const hubUserId = hubResult.userId
+    const hubDisplayName = hubResult.displayName || (hubResult.email ? hubResult.email.split('@')[0] : 'Player')
     let user
 
     const existing = await db.query('SELECT * FROM users WHERE hub_user_id = $1', [hubUserId])
     if (existing.rows.length > 0) {
       user = existing.rows[0]
-      // display_name 업데이트
-      if (hubResult.displayName && hubResult.displayName !== user.display_name) {
-        await db.query('UPDATE users SET display_name = $1, updated_at = NOW() WHERE id = $2', [hubResult.displayName, user.id])
-        user.display_name = hubResult.displayName
+      // display_name 동기화 (없으면 Hub 것으로 업데이트)
+      if (!user.display_name || (hubResult.displayName && hubResult.displayName !== user.display_name)) {
+        const newName = hubResult.displayName || hubDisplayName
+        await db.query('UPDATE users SET display_name = $1, updated_at = NOW() WHERE id = $2', [newName, user.id])
+        user.display_name = newName
       }
     } else {
       // 이메일로 기존 계정 매칭 시도
@@ -140,8 +142,9 @@ async function hubLogin(req, res, next) {
         if (emailMatch.rows.length > 0) {
           user = emailMatch.rows[0]
           await db.query('UPDATE users SET hub_user_id = $1, display_name = COALESCE(display_name, $2), updated_at = NOW() WHERE id = $3',
-            [hubUserId, hubResult.displayName, user.id])
+            [hubUserId, hubDisplayName, user.id])
           user.hub_user_id = hubUserId
+          if (!user.display_name) user.display_name = hubDisplayName
         }
       }
 
@@ -151,7 +154,7 @@ async function hubLogin(req, res, next) {
           `INSERT INTO users (email, display_name, role, hub_user_id, predictor_token)
            VALUES ($1, $2, 'spectator', $3, $4)
            RETURNING *`,
-          [hubResult.email, hubResult.displayName, hubUserId, req.predictorId || null]
+          [hubResult.email, hubDisplayName, hubUserId, req.predictorId || null]
         )
         user = result.rows[0]
       }
@@ -161,7 +164,7 @@ async function hubLogin(req, res, next) {
     const ccToken = generateJWT({ userId: user.id, role: user.role })
 
     res.json({
-      user: { id: user.id, email: user.email, display_name: user.display_name, role: user.role },
+      user: { id: user.id, email: user.email, display_name: user.display_name, role: user.role, points: parseInt(user.points || 1000) },
       token: ccToken
     })
   } catch (err) {
