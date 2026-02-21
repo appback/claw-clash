@@ -74,13 +74,14 @@ export default function LobbyView({ game, onSponsor }) {
               <div className="lobby-slot-header">
                 <span className="lobby-slot-number" style={{ color }}>Slot {i}</span>
                 <span className="lobby-slot-weapon">{weaponIcon} {entry.weapon_name || entry.weapon_slug}</span>
+              </div>
+
+              <div className="lobby-slot-visual">
+                <span className="lobby-crayfish-icon">{'\uD83E\uDD9E'}</span>
+                <span className="lobby-weapon-overlay">{weaponIcon}</span>
                 {speakingSlots[i] && (
                   <span className="lobby-slot-speaking" title="Speaking...">{'\uD83D\uDCAC'}</span>
                 )}
-              </div>
-
-              <div className="lobby-slot-weapon-display">
-                <span className="lobby-weapon-icon">{weaponIcon}</span>
               </div>
 
               <div className="lobby-slot-stats">
@@ -99,31 +100,6 @@ export default function LobbyView({ game, onSponsor }) {
                   </span>
                 </div>
               </div>
-
-              {sponsorship.sponsor_count > 0 && (
-                <div className="lobby-slot-sponsors">
-                  Sponsors: {sponsorship.sponsor_count}
-                </div>
-              )}
-
-              {game.state === 'lobby' && onSponsor && (
-                <div className="lobby-sponsor-actions">
-                  <button
-                    className="btn btn-sm btn-ghost"
-                    onClick={() => onSponsor(i, 'weapon_boost')}
-                    title="Weapon boost: +2 damage (50P)"
-                  >
-                    {'\u2694\uFE0F'} +2 DMG
-                  </button>
-                  <button
-                    className="btn btn-sm btn-ghost"
-                    onClick={() => onSponsor(i, 'hp_boost')}
-                    title="HP boost: +10 HP (50P)"
-                  >
-                    {'\u2764\uFE0F'} +10 HP
-                  </button>
-                </div>
-              )}
             </div>
           )
         })}

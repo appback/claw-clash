@@ -1495,7 +1495,6 @@ a:hover {
 .lobby-slot-stats {
   display: flex;
   gap: 16px;
-  margin-bottom: 8px;
 }
 
 .lobby-stat {
@@ -1521,15 +1520,27 @@ a:hover {
   font-weight: 500;
 }
 
-.lobby-slot-sponsors {
-  font-size: 0.75rem;
-  color: var(--text-muted);
+.lobby-slot-visual {
+  position: relative;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin-bottom: 8px;
 }
 
-.lobby-sponsor-actions {
-  display: flex;
-  gap: 6px;
+.lobby-crayfish-icon {
+  font-size: 3rem;
+  opacity: 0.7;
+  filter: drop-shadow(0 0 8px var(--slot-color));
+}
+
+.lobby-weapon-overlay {
+  position: absolute;
+  font-size: 1.5rem;
+  filter: drop-shadow(0 0 4px rgba(0, 0, 0, 0.6));
+  bottom: 8px;
+  right: calc(50% - 20px);
 }
 
 /* ========================================
@@ -1706,9 +1717,13 @@ a:hover {
    ======================================== */
 
 .lobby-slot-speaking {
-  font-size: 1.2rem;
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 3rem;
   animation: speech-pulse 0.5s ease-in-out;
-  margin-left: auto;
+  opacity: 0.8;
 }
 
 @keyframes speech-pulse {
@@ -1717,16 +1732,3 @@ a:hover {
   100% { transform: scale(1); opacity: 1; }
 }
 
-/* ========================================
-   Large weapon display in lobby cards
-   ======================================== */
-
-.lobby-slot-weapon-display {
-  text-align: center;
-  padding: 8px 0;
-}
-
-.lobby-weapon-icon {
-  font-size: 2.5rem;
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
-}
