@@ -185,4 +185,89 @@ async function testGame(req, res, next) {
   }
 }
 
-module.exports = { testGame }
+/**
+ * POST /api/v1/admin/add-bot
+ * Add a single bot to the matchmaking queue. Requires admin auth.
+ * Body: { name?: string, weapon?: string }
+ */
+async function addBot(req, res, next) {
+  try {
+    const requestedName = req.body.name
+    const requestedWeapon = req.body.weapon || null
+
+    // Pick or create a bot
+    const name = requestedName || BOT_NAMES[Math.floor(Math.random() * BOT_NAMES.length)]
+    const personality = PERSONALITIES[Math.floor(Math.random() * PERSONALITIES.length)]
+    const strategy = STRATEGIES[Math.floor(Math.random() * STRATEGIES.length)]
+
+    let botId
+    const existing = await db.query('SELECT id FROM agents WHERE name = $1', [name])
+    if (existing.rows.length > 0) {
+      botId = existing.rows[0].id
+    } else {
+      const token = generateAgentToken()
+      const result = await db.query(
+        `INSERT INTO agents (name, api_token, is_active, personality, meta)
+         VALUES ($1, $2, true, $3, $4)
+         RETURNING id`,
+        [name, hashToken(token), personality,
+         JSON.stringify({ model_name: 'admin-bot', description: `Bot: ${name}` })]
+      )
+      botId = result.rows[0].id
+    }
+
+    // Check not already in queue or active game
+    const inQueue = await db.query('SELECT id FROM battle_queue WHERE agent_id = $1', [botId])
+    if (inQueue.rows.length > 0) {
+      return res.json({ status: 'already_in_queue', bot: name, bot_id: botId })
+    }
+
+    const inGame = await db.query(
+      `SELECT ge.game_id FROM game_entries ge
+       JOIN games g ON g.id = ge.game_id
+       WHERE ge.agent_id = $1 AND g.state IN ('lobby', 'betting', 'battle')`,
+      [botId]
+    )
+    if (inGame.rows.length > 0) {
+      return res.json({ status: 'already_in_game', bot: name, bot_id: botId, game_id: inGame.rows[0].game_id })
+    }
+
+    // Pick weapon
+    let weaponSlug = requestedWeapon
+    if (!weaponSlug) {
+      const weapons = await db.query('SELECT slug FROM weapons WHERE is_active = true')
+      if (weapons.rows.length > 0) {
+        weaponSlug = weapons.rows[Math.floor(Math.random() * weapons.rows.length)].slug
+      }
+    }
+
+    // Add to queue
+    await db.query(
+      `INSERT INTO battle_queue (agent_id, weapon_slug, strategy)
+       VALUES ($1, $2, $3)`,
+      [botId, weaponSlug, JSON.stringify(strategy)]
+    )
+
+    // Trigger matchmaker
+    const { processQueue } = require('../../services/matchmaker')
+    if (processQueue) {
+      processQueue().catch(() => {})
+    }
+
+    // Broadcast queue update
+    const io = req.app.get('io')
+    if (io) {
+      const cnt = await db.query(
+        "SELECT COUNT(*)::int AS cnt FROM battle_queue WHERE cooldown_until IS NULL OR cooldown_until < now()"
+      )
+      io.emit('queue_update', { players_in_queue: cnt.rows[0].cnt })
+    }
+
+    console.log(`[Admin] Added bot '${name}' to queue (weapon: ${weaponSlug})`)
+    res.status(201).json({ status: 'queued', bot: name, bot_id: botId, weapon: weaponSlug })
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { testGame, addBot }

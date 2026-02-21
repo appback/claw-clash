@@ -152,5 +152,6 @@ router.post('/admin/games', jwtAuth, adminAuth, gamesController.create)
 router.patch('/admin/games/:id', jwtAuth, adminAuth, gamesController.update)
 router.post('/admin/arenas', jwtAuth, adminAuth, gamesController.createArena)
 router.post('/admin/weapons', jwtAuth, adminAuth, gamesController.createWeapon)
+router.post('/admin/add-bot', jwtAuth, adminAuth, devController.addBot)
 
 module.exports = router
