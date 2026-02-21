@@ -47,13 +47,16 @@ async function settle(gameId, results) {
   try {
     await client.query('BEGIN')
 
-    // Settle registered user bets (pool-based proportional payout)
+    // Settle registered user bets (hold pattern: deduct bet + credit payout at settlement)
+    // Aggregate net change per user to minimize UPDATE queries
+    const userNetMap = {}  // userId → net points change
     for (const bet of userBets) {
       const isWinner = bet.slot === winnerSlot
+      const betAmount = parseInt(bet.amount)
       let payout = 0
 
       if (isWinner && winnerStakeTotal > 0) {
-        payout = Math.floor((parseInt(bet.amount) / winnerStakeTotal) * winPool)
+        payout = Math.floor((betAmount / winnerStakeTotal) * winPool)
       }
 
       await client.query(
@@ -61,10 +64,17 @@ async function settle(gameId, results) {
         [payout, bet.id]
       )
 
-      if (payout > 0) {
+      // Net = payout - betAmount (negative for losers, positive for big winners)
+      if (!userNetMap[bet.user_id]) userNetMap[bet.user_id] = 0
+      userNetMap[bet.user_id] += payout - betAmount
+    }
+
+    // Apply net point changes per user
+    for (const [userId, net] of Object.entries(userNetMap)) {
+      if (net !== 0) {
         await client.query(
           'UPDATE users SET points = points + $1 WHERE id = $2',
-          [payout, bet.user_id]
+          [net, userId]
         )
       }
     }

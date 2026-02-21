@@ -1018,13 +1018,22 @@ async function placeBet(req, res, next) {
       try {
         await client.query('BEGIN')
 
+        // Check available balance: points minus all unsettled bet holds
         const userResult = await client.query(
           'SELECT points FROM users WHERE id = $1 FOR UPDATE',
           [userId]
         )
         const currentPoints = parseInt(userResult.rows[0].points)
-        if (currentPoints < amount) {
-          throw new BadRequestError(`Insufficient points. Have ${currentPoints}, need ${amount}`)
+
+        const holdResult = await client.query(
+          'SELECT COALESCE(SUM(amount), 0) AS held FROM game_bets WHERE user_id = $1 AND settled_at IS NULL',
+          [userId]
+        )
+        const heldAmount = parseInt(holdResult.rows[0].held)
+        const available = currentPoints - heldAmount
+
+        if (available < amount) {
+          throw new BadRequestError(`Insufficient points. Available ${available} (${currentPoints} - ${heldAmount} held), need ${amount}`)
         }
 
         await client.query(
@@ -1032,15 +1041,10 @@ async function placeBet(req, res, next) {
           [id, userId, slot, amount]
         )
 
-        await client.query(
-          'UPDATE users SET points = points - $1 WHERE id = $2',
-          [amount, userId]
-        )
-
         await client.query('COMMIT')
 
-        const remaining = currentPoints - amount
-        res.status(201).json({ slot, amount, remaining_points: remaining })
+        const remainingAvailable = available - amount
+        res.status(201).json({ slot, amount, remaining_points: remainingAvailable })
       } catch (err) {
         await client.query('ROLLBACK')
         throw err

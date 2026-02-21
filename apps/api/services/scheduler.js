@@ -293,6 +293,23 @@ async function refundGameEntries(gameId) {
       [entry.entry_fee_paid, entry.agent_id]
     )
   }
+  // Release bet holds (no points were deducted, just mark as cancelled)
+  await cancelGameBets(gameId)
+}
+
+/**
+ * Cancel unsettled bets for a game (hold pattern: no refund needed, just release holds).
+ */
+async function cancelGameBets(gameId) {
+  const result = await db.query(
+    `UPDATE game_bets SET payout = 0, settled_at = now()
+     WHERE game_id = $1 AND settled_at IS NULL
+     RETURNING id`,
+    [gameId]
+  )
+  if (result.rows.length > 0) {
+    console.log(`[Scheduler] Released ${result.rows.length} bet holds for cancelled game ${gameId}`)
+  }
 }
 
 // ==========================================
@@ -551,6 +568,7 @@ async function recoverStuckBattles() {
         "UPDATE game_entries SET status = 'eliminated' WHERE game_id = $1 AND status = 'fighting'",
         [row.id]
       )
+      await cancelGameBets(row.id)
       console.log(`[Scheduler] Recovered stuck battle: ${row.title} (${row.id})`)
     }
   }
