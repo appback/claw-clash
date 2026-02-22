@@ -168,7 +168,7 @@ export default function RacePage() {
                           {myPrediction.result === 'win' ? 'Correct!' : 'Wrong'}
                         </span>
                         {myPrediction.payout > 0 && (
-                          <span> &middot; Won {myPrediction.payout} pts</span>
+                          <span> &middot; Won {'\uD83C\uDF56'} {myPrediction.payout}</span>
                         )}
                       </p>
                     )}

@@ -99,7 +99,7 @@ export default function LeaderboardPage() {
                   <td>{user.total_predictions}</td>
                   <td className="text-accent">{user.correct_predictions}</td>
                   <td>{user.accuracy}%</td>
-                  <td>{user.total_winnings} pts</td>
+                  <td>{'\uD83C\uDF56'} {user.total_winnings}</td>
                 </tr>
               ))}
             </tbody>

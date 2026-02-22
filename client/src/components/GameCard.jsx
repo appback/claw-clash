@@ -70,7 +70,7 @@ export default function GameCard({ game }) {
         </span>
         {game.entry_fee > 0 && (
           <span className="race-card-meta-item">
-            {'\uD83C\uDFAB'} {game.entry_fee} pts
+            {'\uD83C\uDF56'} {game.entry_fee}
           </span>
         )}
         <span className="race-card-meta-item">

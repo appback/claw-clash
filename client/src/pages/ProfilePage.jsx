@@ -11,6 +11,8 @@ const TABS = [
 ]
 
 const PRESETS = [10, 50, 100]
+const CURRENCY_ICON = { gem: '\uD83D\uDC8E', star: '\u2B50' }
+const PTS = '\uD83C\uDF56'
 
 export default function ProfilePage() {
   const navigate = useNavigate()
@@ -35,6 +37,7 @@ export default function ProfilePage() {
 
   // Gem conversion state
   const [chargeOpen, setChargeOpen] = useState(false)
+  const [chargeCurrency, setChargeCurrency] = useState('')
   const [chargeAmount, setChargeAmount] = useState('')
   const [chargeConfirm, setChargeConfirm] = useState(false)
   const [charging, setCharging] = useState(false)
@@ -111,7 +114,27 @@ export default function ProfilePage() {
     }
   }
 
-  const gemBalance = wallet?.balances?.find(b => (b.currency_code || b.code) === 'gem')?.balance || 0
+  // Convertible balances sorted: star first (to encourage spending star before gem)
+  const convertibleBalances = (wallet?.balances || [])
+    .filter(b => parseInt(b.balance) > 0)
+    .sort((a, b) => {
+      const codeA = a.currency_code || a.code
+      const codeB = b.currency_code || b.code
+      if (codeA === 'star') return -1
+      if (codeB === 'star') return 1
+      return 0
+    })
+  const selectedBalance = convertibleBalances.find(b => (b.currency_code || b.code) === chargeCurrency)
+  const selectedMax = parseInt(selectedBalance?.balance) || 0
+
+  function openCharge() {
+    // Default to star if available, else first available
+    const defaultCurrency = convertibleBalances.length > 0
+      ? (convertibleBalances[0].currency_code || convertibleBalances[0].code)
+      : ''
+    setChargeCurrency(defaultCurrency)
+    setChargeOpen(true)
+  }
 
   function selectPreset(val) {
     setChargeAmount(String(val))
@@ -126,6 +149,7 @@ export default function ProfilePage() {
 
   function cancelCharge() {
     setChargeOpen(false)
+    setChargeCurrency('')
     setChargeAmount('')
     setChargeConfirm(false)
   }
@@ -135,15 +159,16 @@ export default function ProfilePage() {
     if (!amount || amount < 1) return
     setCharging(true)
     try {
-      const res = await userApi.post('/wallet/convert', { amount })
-      toast.success(`Charged ${amount} points!`)
+      const icon = CURRENCY_ICON[chargeCurrency] || chargeCurrency
+      const res = await userApi.post('/wallet/convert', { amount, currency_code: chargeCurrency })
+      toast.success(`${icon} ${amount} → ${PTS} ${amount} charged!`)
       setProfile(prev => ({ ...prev, points: res.data.new_points ?? prev.points + amount }))
       setWallet(prev => {
         if (!prev) return prev
         return {
           ...prev,
           balances: prev.balances.map(b =>
-            (b.currency_code || b.code) === 'gem' ? { ...b, balance: res.data.new_gem_balance ?? b.balance - amount } : b
+            (b.currency_code || b.code) === chargeCurrency ? { ...b, balance: String(parseInt(b.balance) - amount) } : b
           )
         }
       })
@@ -223,7 +248,7 @@ export default function ProfilePage() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-            <StatCard label="Points" value={profile.points} accent />
+            <StatCard label={'\uD83C\uDF56 Points'} value={profile.points} accent />
             <StatCard label="Bets" value={stats.bets_count} />
             <StatCard label="Bets Won" value={stats.bets_won} />
             <StatCard label="Wagered" value={stats.total_wagered} />
@@ -257,17 +282,18 @@ export default function ProfilePage() {
               <div style={{ display: 'flex', gap: '12px', marginTop: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                 {wallet.balances.map(b => {
                   const code = b.currency_code || b.code
+                  const icon = CURRENCY_ICON[code] || code.toUpperCase()
                   return (
                     <span key={code} style={{
                       padding: '6px 12px', background: 'var(--bg)', border: '1px solid var(--border)',
                       borderRadius: 'var(--radius)', fontSize: '0.875rem'
                     }}>
-                      {b.balance} {code.toUpperCase()}
+                      {icon} {b.balance}
                     </span>
                   )
                 })}
-                {!chargeOpen && (
-                  <button className="btn btn-primary" onClick={() => setChargeOpen(true)} style={{ padding: '6px 16px', fontSize: '0.875rem' }}>
+                {!chargeOpen && convertibleBalances.length > 0 && (
+                  <button className="btn btn-primary" onClick={openCharge} style={{ padding: '6px 16px', fontSize: '0.875rem' }}>
                     Charge Points
                   </button>
                 )}
@@ -279,14 +305,34 @@ export default function ProfilePage() {
                   border: '1px solid var(--border)', borderRadius: 'var(--radius)'
                 }}>
                   <div style={{ fontWeight: 600, marginBottom: '12px', fontSize: '1rem' }}>Charge Points</div>
-                  <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                    Hub Balance: {gemBalance} GEM
+
+                  {/* Currency selector */}
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                    {convertibleBalances.map(b => {
+                      const code = b.currency_code || b.code
+                      const icon = CURRENCY_ICON[code] || code.toUpperCase()
+                      const isSelected = chargeCurrency === code
+                      return (
+                        <button
+                          key={code}
+                          className={'bet-amount-btn' + (isSelected ? '' : '')}
+                          onClick={() => { setChargeCurrency(code); setChargeAmount(''); setChargeConfirm(false) }}
+                          style={{
+                            background: isSelected ? 'var(--primary)' : 'var(--bg)',
+                            color: isSelected ? '#fff' : 'var(--text)',
+                            border: '1px solid ' + (isSelected ? 'var(--primary)' : 'var(--border)')
+                          }}
+                        >
+                          {icon} {b.balance}
+                        </button>
+                      )
+                    })}
                   </div>
 
                   {!chargeConfirm ? (
                     <>
                       <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                        {PRESETS.map(v => (
+                        {PRESETS.filter(v => v <= selectedMax).map(v => (
                           <button key={v} className="bet-amount-btn" onClick={() => selectPreset(v)}>{v}</button>
                         ))}
                         <input
@@ -294,6 +340,7 @@ export default function ProfilePage() {
                           className="form-input"
                           placeholder="Custom"
                           min="1"
+                          max={selectedMax}
                           value={chargeAmount}
                           onChange={e => setChargeAmount(e.target.value)}
                           onKeyDown={e => { if (e.key === 'Enter') handleCustomSubmit() }}
@@ -315,7 +362,7 @@ export default function ProfilePage() {
                         padding: '12px 16px', background: 'var(--card-bg, var(--surface))', border: '1px solid var(--border)',
                         borderRadius: 'var(--radius)', marginBottom: '16px', fontSize: '0.95rem'
                       }}>
-                        {chargeAmount} Gems &rarr; {chargeAmount} Points
+                        {CURRENCY_ICON[chargeCurrency] || chargeCurrency} {chargeAmount} &rarr; {PTS} {chargeAmount}
                       </div>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button className="btn btn-primary" onClick={confirmCharge} disabled={charging} style={{ padding: '8px 20px' }}>
@@ -370,8 +417,8 @@ export default function ProfilePage() {
                     <tr key={b.id}>
                       <td>{b.game_title}</td>
                       <td>#{b.slot}</td>
-                      <td>{parseInt(b.amount)} pts</td>
-                      <td className={parseInt(b.payout) > 0 ? 'text-accent' : ''}>{parseInt(b.payout)} pts</td>
+                      <td>{PTS} {parseInt(b.amount)}</td>
+                      <td className={parseInt(b.payout) > 0 ? 'text-accent' : ''}>{PTS} {parseInt(b.payout)}</td>
                       <td className={b.result === 'won' ? 'text-accent' : ''}>{b.result === 'won' ? 'Won' : b.result === 'lost' ? 'Lost' : 'Pending'}</td>
                       <td>{new Date(b.created_at).toLocaleDateString()}</td>
                     </tr>
@@ -413,8 +460,8 @@ export default function ProfilePage() {
                       <td>#{s.slot}</td>
                       <td>{s.boost_type === 'weapon_boost' ? 'Weapon' : 'HP'}</td>
                       <td>+{s.effect_value}</td>
-                      <td>{parseInt(s.cost)} pts</td>
-                      <td className={parseInt(s.payout) > 0 ? 'text-accent' : ''}>{parseInt(s.payout)} pts</td>
+                      <td>{PTS} {parseInt(s.cost)}</td>
+                      <td className={parseInt(s.payout) > 0 ? 'text-accent' : ''}>{PTS} {parseInt(s.payout)}</td>
                       <td className={s.result === 'won' ? 'text-accent' : ''}>{s.result === 'won' ? 'Won' : s.result === 'lost' ? 'Lost' : 'Pending'}</td>
                       <td>{new Date(s.created_at).toLocaleDateString()}</td>
                     </tr>

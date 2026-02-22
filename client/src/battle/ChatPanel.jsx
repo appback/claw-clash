@@ -145,7 +145,7 @@ export default function ChatPanel({ gameId, gameState, userPoints, myBets, viewe
       {isActive && isLoggedIn && (
         <div className="chat-user-panel">
           <div className="chat-user-balance">
-            {'\uD83D\uDCB0'} {userPoints != null ? userPoints : '...'} pts
+            {'\uD83C\uDF56'} {userPoints != null ? userPoints : '...'}
           </div>
           {myBets && myBets.length > 0 && (
             <div className="chat-user-bets">
@@ -153,11 +153,11 @@ export default function ChatPanel({ gameId, gameState, userPoints, myBets, viewe
               {Object.entries(betsBySlot).map(([slot, amount]) => (
                 <div key={slot} className="chat-user-bet-row">
                   <span style={{ color: SLOT_COLORS[slot % SLOT_COLORS.length] }}>Slot {slot}</span>
-                  <span>{amount} pts</span>
+                  <span>{'\uD83C\uDF56'} {amount}</span>
                 </div>
               ))}
               {totalBet > 0 && (
-                <div className="chat-user-bet-total">Total: {totalBet} pts bet</div>
+                <div className="chat-user-bet-total">Total: {'\uD83C\uDF56'} {totalBet}</div>
               )}
             </div>
           )}

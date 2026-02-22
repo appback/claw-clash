@@ -66,7 +66,7 @@ export default function BettingSummary({ gameId }) {
               <span className="betting-summary-slot-label" style={{ color }}>Slot {b.slot}</span>
               <span className="betting-summary-slot-count">
                 {b.count} bet{b.count !== 1 ? 's' : ''}
-                {b.total_amount > 0 && ` / ${b.total_amount} pts`}
+                {b.total_amount > 0 && ` / \uD83C\uDF56 ${b.total_amount}`}
               </span>
             </div>
           )
@@ -83,7 +83,7 @@ export default function BettingSummary({ gameId }) {
           {Object.entries(myBetsBySlot).map(([slot, info]) => (
             <div key={slot} className="betting-summary-my-row">
               <span style={{ color: SLOT_COLORS[slot % SLOT_COLORS.length] }}>Slot {slot}</span>
-              <span>{info.count > 1 ? `${info.count}x / ` : ''}{info.totalAmount} pts</span>
+              <span>{info.count > 1 ? `${info.count}x / ` : ''}{'\uD83C\uDF56'} {info.totalAmount}</span>
               <span className={info.totalPayout > 0 ? 'text-win' : 'text-lose'}>
                 {info.settled ? (info.totalPayout > 0 ? `+${info.totalPayout}` : 'Lost') : 'Pending'}
               </span>
@@ -91,7 +91,7 @@ export default function BettingSummary({ gameId }) {
           ))}
           {hasSettled && (
             <div className={'betting-summary-net' + (myNet >= 0 ? ' text-win' : ' text-lose')}>
-              Net: {myNet >= 0 ? '+' : ''}{myNet} pts
+              Net: {myNet >= 0 ? '+' : ''}{'\uD83C\uDF56'} {myNet}
             </div>
           )}
         </div>

@@ -1224,8 +1224,9 @@ async function getUserProfile(req, res, next) {
  */
 async function convertPoints(req, res, next) {
   try {
-    const { amount } = req.body
+    const { amount, currency_code } = req.body
     const userId = req.user.userId
+    const currencyCode = currency_code || 'gem'
 
     if (!amount || amount <= 0 || !Number.isInteger(amount)) {
       throw new ValidationError('Positive integer amount required')
@@ -1247,7 +1248,7 @@ async function convertPoints(req, res, next) {
     const hubUrl = process.env.HUB_API_URL || 'https://appback.app/api/v1'
     const https = require('https')
     const hubResult = await new Promise((resolve, reject) => {
-      const postData = JSON.stringify({ currency_code: 'gem', amount })
+      const postData = JSON.stringify({ currency_code: currencyCode, amount })
       const urlObj = new URL(`${hubUrl}/user/wallet/withdraw`)
       const req = https.request({
         hostname: urlObj.hostname,

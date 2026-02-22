@@ -115,7 +115,7 @@ export default function Nav() {
           {auth.isUser ? (
             <>
               {userPoints != null && (
-                <span className="nav-points-badge">{userPoints} pts</span>
+                <span className="nav-points-badge">{'\uD83C\uDF56'} {userPoints}</span>
               )}
               <Link
                 to="/profile"

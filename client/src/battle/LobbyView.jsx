@@ -179,7 +179,7 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
           <p className="text-muted">
             {entries.length}/{maxSlots} fighters joined &middot; Arena: {game.arena_name || 'The Pit'}
             {isBetting && userPoints != null && (
-              <span> &middot; <span className="betting-points-inline">{userPoints} pts</span></span>
+              <span> &middot; <span className="betting-points-inline">{'\uD83C\uDF56'} {userPoints}</span></span>
             )}
             {isBetting && !isLoggedIn && (
               <span> &middot; <span className="betting-points-inline">{'\uD83D\uDCB0'} {guestCredits} credits</span></span>

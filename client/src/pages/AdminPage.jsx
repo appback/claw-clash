@@ -119,7 +119,7 @@ export default function AdminPage() {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Entry Fee (pts)</label>
+              <label className="form-label">Entry Fee 🍖</label>
               <input
                 className="form-input"
                 type="number"

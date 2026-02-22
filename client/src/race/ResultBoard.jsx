@@ -30,7 +30,7 @@ export default function ResultBoard({ entries }) {
             </div>
             <span style={{ fontSize: '1.25rem' }}>{'\uD83E\uDD80'}</span>
             <span className="result-name">{entry.agent_name}</span>
-            <span className="result-score">{entry.total_score ?? 0} pts</span>
+            <span className="result-score">{'\uD83C\uDF56'} {entry.total_score ?? 0}</span>
           </div>
         ))}
       </div>
