@@ -28,8 +28,9 @@ export default function GamePage() {
   const [serverOffset, setServerOffset] = useState(0)
 
   const isBattle = game?.state === 'battle'
-  const { state: liveState, error: liveError, viewers } = useBattleState(id, isBattle)
+  const { state: liveState, error: liveError } = useBattleState(id, isBattle)
   const [liveChatBubbles, setLiveChatBubbles] = useState([])
+  const [viewers, setViewers] = useState(0)
 
   // Listen for chat messages during live battle → pass to BattleArena as bubbles
   useEffect(() => {
@@ -68,11 +69,14 @@ export default function GamePage() {
     function onLobbyFull({ betting_start, battle_start }) {
       setGame(prev => prev ? { ...prev, betting_start, battle_start } : prev)
     }
+    function onViewers(count) { setViewers(count) }
     socket.on('game_state', onGameState)
     socket.on('lobby_full', onLobbyFull)
+    socket.on('viewers', onViewers)
     return () => {
       socket.off('game_state', onGameState)
       socket.off('lobby_full', onLobbyFull)
+      socket.off('viewers', onViewers)
     }
   }, [id])
 

@@ -13,7 +13,6 @@ import socket from '../socket'
 export default function useBattleState(gameId, isActive) {
   const [state, setState] = useState(null)
   const [error, setError] = useState(null)
-  const [viewers, setViewers] = useState(0)
   const lastTickRef = useRef(null)
 
   useEffect(() => {
@@ -90,24 +89,18 @@ export default function useBattleState(gameId, isActive) {
       }
     }
 
-    function onViewers(count) {
-      setViewers(count)
-    }
-
     socket.on('tick', onTick)
     socket.on('battle_ended', onBattleEnded)
     socket.on('game_state', onGameState)
-    socket.on('viewers', onViewers)
 
     return () => {
       socket.emit('leave_game', gameId)
       socket.off('tick', onTick)
       socket.off('battle_ended', onBattleEnded)
       socket.off('game_state', onGameState)
-      socket.off('viewers', onViewers)
       lastTickRef.current = null
     }
   }, [gameId, isActive])
 
-  return { state, error, viewers }
+  return { state, error }
 }

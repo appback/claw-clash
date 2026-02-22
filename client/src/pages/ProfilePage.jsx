@@ -49,7 +49,13 @@ export default function ProfilePage() {
         setEditName(res.data.display_name || '')
         if (res.data.hub_connected) {
           userApi.get('/users/me/wallet')
-            .then(w => setWallet(w.data))
+            .then(w => {
+              if (!w.data.hub_connected) {
+                setWallet({ hub_connected: false, balances: [], expired: true })
+              } else {
+                setWallet(w.data)
+              }
+            })
             .catch(() => {})
         }
       })
@@ -143,7 +149,11 @@ export default function ProfilePage() {
       })
       cancelCharge()
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to charge points')
+      const msg = err.response?.data?.message || 'Failed to charge points'
+      toast.error(msg)
+      if (msg.includes('Hub') && (msg.includes('token') || msg.includes('login'))) {
+        setTimeout(() => navigate('/login'), 1500)
+      }
     } finally {
       setCharging(false)
     }
@@ -221,7 +231,25 @@ export default function ProfilePage() {
             <StatCard label="Sponsors" value={stats.sponsors_count} />
           </div>
 
-          {profile.hub_connected && wallet ? (
+          {profile.hub_connected && wallet?.expired ? (
+            <div style={{ marginBottom: '24px' }}>
+              <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                Hub Wallet
+              </label>
+              <div style={{
+                marginTop: '8px', padding: '16px', background: 'var(--bg)',
+                border: '1px solid var(--border)', borderRadius: 'var(--radius)',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px'
+              }}>
+                <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                  Hub session expired. Please log in again.
+                </span>
+                <button className="btn btn-primary" onClick={() => navigate('/login')} style={{ padding: '6px 16px', fontSize: '0.875rem' }}>
+                  Re-login
+                </button>
+              </div>
+            </div>
+          ) : profile.hub_connected && wallet && !wallet.expired ? (
             <div style={{ marginBottom: '24px' }}>
               <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Hub Wallet
