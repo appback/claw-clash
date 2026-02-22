@@ -67,7 +67,6 @@ export default function Nav() {
   const links = [
     { to: '/', label: 'Home' },
     { to: '/leaderboard', label: 'Leaderboard' },
-    { to: '/history', label: 'History' },
   ]
 
   if (auth.isAdmin) {

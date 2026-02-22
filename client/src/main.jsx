@@ -7,7 +7,6 @@ import Footer from './components/Footer'
 import HomePage from './pages/HomePage'
 import RacePage from './pages/RacePage'
 import LeaderboardPage from './pages/LeaderboardPage'
-import HistoryPage from './pages/HistoryPage'
 import LoginPage from './pages/LoginPage'
 import AdminPage from './pages/AdminPage'
 import GamePage from './pages/GamePage'
@@ -28,7 +27,6 @@ createRoot(document.getElementById('root')).render(
             <Route path="/" element={<HomePage />} />
             <Route path="/race/:id" element={<RacePage />} />
             <Route path="/leaderboard" element={<LeaderboardPage />} />
-            <Route path="/history" element={<HistoryPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/game/:id" element={<GamePage />} />
             <Route path="/profile" element={<ProfilePage />} />

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { userApi } from '../api'
+import { useToast } from '../components/Toast'
 import Loading from '../components/Loading'
 
 const TABS = [
@@ -9,8 +10,11 @@ const TABS = [
   { key: 'sponsors', label: 'Sponsor History' }
 ]
 
+const PRESETS = [10, 50, 100]
+
 export default function ProfilePage() {
   const navigate = useNavigate()
+  const toast = useToast()
   const [tab, setTab] = useState('profile')
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -28,6 +32,12 @@ export default function ProfilePage() {
   const [editName, setEditName] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  // Gem conversion state
+  const [chargeOpen, setChargeOpen] = useState(false)
+  const [chargeAmount, setChargeAmount] = useState('')
+  const [chargeConfirm, setChargeConfirm] = useState(false)
+  const [charging, setCharging] = useState(false)
 
   useEffect(() => {
     const token = localStorage.getItem('user_token')
@@ -92,6 +102,50 @@ export default function ProfilePage() {
       setError(err.response?.data?.message || 'Failed to update')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const gemBalance = wallet?.balances?.find(b => b.currency_code === 'gem')?.balance || 0
+
+  function selectPreset(val) {
+    setChargeAmount(String(val))
+    setChargeConfirm(true)
+  }
+
+  function handleCustomSubmit() {
+    const num = parseInt(chargeAmount)
+    if (!num || num < 1) return
+    setChargeConfirm(true)
+  }
+
+  function cancelCharge() {
+    setChargeOpen(false)
+    setChargeAmount('')
+    setChargeConfirm(false)
+  }
+
+  async function confirmCharge() {
+    const amount = parseInt(chargeAmount)
+    if (!amount || amount < 1) return
+    setCharging(true)
+    try {
+      const res = await userApi.post('/wallet/convert', { amount })
+      toast.success(`Charged ${amount} points!`)
+      setProfile(prev => ({ ...prev, points: res.data.new_points ?? prev.points + amount }))
+      setWallet(prev => {
+        if (!prev) return prev
+        return {
+          ...prev,
+          balances: prev.balances.map(b =>
+            b.currency_code === 'gem' ? { ...b, balance: res.data.new_gem_balance ?? b.balance - amount } : b
+          )
+        }
+      })
+      cancelCharge()
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to charge points')
+    } finally {
+      setCharging(false)
     }
   }
 
@@ -167,12 +221,12 @@ export default function ProfilePage() {
             <StatCard label="Sponsors" value={stats.sponsors_count} />
           </div>
 
-          {wallet && wallet.hub_connected && wallet.balances.length > 0 && (
+          {profile.hub_connected && wallet ? (
             <div style={{ marginBottom: '24px' }}>
               <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 Hub Wallet
               </label>
-              <div style={{ display: 'flex', gap: '12px', marginTop: '8px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '12px', marginTop: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                 {wallet.balances.map(b => (
                   <span key={b.currency_code} style={{
                     padding: '6px 12px', background: 'var(--bg)', border: '1px solid var(--border)',
@@ -181,7 +235,73 @@ export default function ProfilePage() {
                     {b.balance} {b.currency_code.toUpperCase()}
                   </span>
                 ))}
+                {!chargeOpen && (
+                  <button className="btn btn-primary" onClick={() => setChargeOpen(true)} style={{ padding: '6px 16px', fontSize: '0.875rem' }}>
+                    Charge Points
+                  </button>
+                )}
               </div>
+
+              {chargeOpen && (
+                <div style={{
+                  marginTop: '16px', padding: '20px', background: 'var(--bg)',
+                  border: '1px solid var(--border)', borderRadius: 'var(--radius)'
+                }}>
+                  <div style={{ fontWeight: 600, marginBottom: '12px', fontSize: '1rem' }}>Charge Points</div>
+                  <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                    Hub Balance: {gemBalance} GEM
+                  </div>
+
+                  {!chargeConfirm ? (
+                    <>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                        {PRESETS.map(v => (
+                          <button key={v} className="bet-amount-btn" onClick={() => selectPreset(v)}>{v}</button>
+                        ))}
+                        <input
+                          type="number"
+                          className="form-input"
+                          placeholder="Custom"
+                          min="1"
+                          value={chargeAmount}
+                          onChange={e => setChargeAmount(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') handleCustomSubmit() }}
+                          style={{ width: '100px', padding: '8px 12px' }}
+                        />
+                        {chargeAmount && parseInt(chargeAmount) > 0 && (
+                          <button className="btn btn-primary" onClick={handleCustomSubmit} style={{ padding: '8px 16px' }}>
+                            Next
+                          </button>
+                        )}
+                      </div>
+                      <button className="btn btn-ghost" onClick={cancelCharge} style={{ padding: '6px 16px', fontSize: '0.875rem' }}>
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{
+                        padding: '12px 16px', background: 'var(--card-bg, var(--surface))', border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius)', marginBottom: '16px', fontSize: '0.95rem'
+                      }}>
+                        {chargeAmount} Gems &rarr; {chargeAmount} Points
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button className="btn btn-primary" onClick={confirmCharge} disabled={charging} style={{ padding: '8px 20px' }}>
+                          {charging ? 'Charging...' : 'Confirm'}
+                        </button>
+                        <button className="btn btn-ghost" onClick={cancelCharge} disabled={charging} style={{ padding: '8px 20px' }}>
+                          Cancel
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : !profile.hub_connected && (
+            <div style={{ marginBottom: '24px', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+              Connect via Hub to charge points
             </div>
           )}
 
