@@ -1276,6 +1276,9 @@ async function convertPoints(req, res, next) {
       req.end()
     })
 
+    if (hubResult.status === 401) {
+      throw new BadRequestError('Hub token expired. Please re-login via Hub.')
+    }
     if (hubResult.status !== 200) {
       const msg = hubResult.body?.error || hubResult.body?.message || 'Hub withdrawal failed'
       throw new BadRequestError(msg)
