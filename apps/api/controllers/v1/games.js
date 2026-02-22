@@ -1055,12 +1055,22 @@ async function placeBet(req, res, next) {
     if (isAnon) {
       // Anonymous bet: amount=0, use IP as anon_id, max 5 per game
       const anonId = req.ip || req.headers['x-forwarded-for'] || 'unknown'
+
+      // Guest must bet on the same slot as previous bets
+      const existingSlots = await db.query(
+        'SELECT DISTINCT slot FROM game_bets WHERE game_id = $1 AND anon_id = $2',
+        [id, anonId]
+      )
+      if (existingSlots.rows.length > 0 && existingSlots.rows[0].slot !== slot) {
+        throw new BadRequestError('Guest must bet on same fighter')
+      }
+
       const existing = await db.query(
         'SELECT COUNT(*) AS cnt FROM game_bets WHERE game_id = $1 AND anon_id = $2',
         [id, anonId]
       )
       if (parseInt(existing.rows[0].cnt) >= 5) {
-        throw new BadRequestError('Maximum 5 free bets per game')
+        throw new BadRequestError('Maximum 5 bets per game')
       }
 
       await db.query(
@@ -1068,7 +1078,7 @@ async function placeBet(req, res, next) {
         [id, slot, anonId]
       )
 
-      res.status(201).json({ slot, amount: 0, remaining_points: null })
+      res.status(201).json({ slot, amount: 0, remaining_points: null, guest_credits_used: 1 })
     } else {
       // Logged-in bet: amount 1/10/100
       if (!config.betAmounts.includes(amount)) {
@@ -1128,19 +1138,22 @@ async function getBetCounts(req, res, next) {
     const game = await db.query('SELECT max_entries FROM games WHERE id = $1', [id])
     if (game.rows.length === 0) throw new NotFoundError('Game not found')
 
-    // Bet counts per slot (public info — count only, no amounts)
+    // Bet counts + total amounts per slot
     const counts = await db.query(
-      `SELECT slot, COUNT(*) AS count FROM game_bets WHERE game_id = $1 GROUP BY slot ORDER BY slot`,
+      `SELECT slot, COUNT(*) AS count, COALESCE(SUM(amount), 0) AS total_amount
+       FROM game_bets WHERE game_id = $1 GROUP BY slot ORDER BY slot`,
       [id]
     )
     const countMap = {}
+    const amountMap = {}
     for (const r of counts.rows) {
       countMap[r.slot] = parseInt(r.count)
+      amountMap[r.slot] = parseInt(r.total_amount)
     }
 
     const bets = []
     for (let i = 0; i < game.rows[0].max_entries; i++) {
-      bets.push({ slot: i, count: countMap[i] || 0 })
+      bets.push({ slot: i, count: countMap[i] || 0, total_amount: amountMap[i] || 0 })
     }
 
     const result = { bets }
@@ -1205,12 +1218,89 @@ async function getUserProfile(req, res, next) {
   }
 }
 
+/**
+ * POST /api/v1/wallet/convert - Convert Hub Gems to CC points (1:1)
+ * Requires hub_token stored from hub-login
+ */
+async function convertPoints(req, res, next) {
+  try {
+    const { amount } = req.body
+    const userId = req.user.userId
+
+    if (!amount || amount <= 0 || !Number.isInteger(amount)) {
+      throw new ValidationError('Positive integer amount required')
+    }
+
+    // Get user's hub_token
+    const userResult = await db.query(
+      'SELECT hub_token, points FROM users WHERE id = $1',
+      [userId]
+    )
+    if (userResult.rows.length === 0) throw new NotFoundError('User not found')
+
+    const { hub_token, points } = userResult.rows[0]
+    if (!hub_token) {
+      throw new BadRequestError('Hub login required. Please login via Hub first.')
+    }
+
+    // Call Hub withdraw API (debit Gems from Hub wallet)
+    const hubUrl = process.env.HUB_API_URL || 'https://appback.app/api/v1'
+    const https = require('https')
+    const hubResult = await new Promise((resolve, reject) => {
+      const postData = JSON.stringify({ currency_code: 'gem', amount })
+      const urlObj = new URL(`${hubUrl}/user/wallet/withdraw`)
+      const req = https.request({
+        hostname: urlObj.hostname,
+        port: urlObj.port || 443,
+        path: urlObj.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData),
+          'Authorization': `Bearer ${hub_token}`
+        }
+      }, (res) => {
+        let data = ''
+        res.on('data', chunk => { data += chunk })
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data)
+            resolve({ status: res.statusCode, body: parsed })
+          } catch {
+            reject(new Error('Invalid Hub response'))
+          }
+        })
+      })
+      req.on('error', reject)
+      req.write(postData)
+      req.end()
+    })
+
+    if (hubResult.status !== 200) {
+      const msg = hubResult.body?.error || hubResult.body?.message || 'Hub withdrawal failed'
+      throw new BadRequestError(msg)
+    }
+
+    // Credit points to CC user
+    await db.query(
+      'UPDATE users SET points = points + $1, updated_at = NOW() WHERE id = $2',
+      [amount, userId]
+    )
+
+    const newPoints = parseInt(points) + amount
+    res.json({ points: newPoints, hub_deducted: amount })
+  } catch (err) {
+    next(err)
+  }
+}
+
 module.exports = {
   list, get, getState, replay, getChat, sendChat,
   join, submitStrategy,
   uploadChatPool, getChatPoolStatus,
   sponsor, getSponsorships,
   placeBet, getBetCounts, getUserProfile,
+  convertPoints,
   create, update,
   listArenas, listWeapons, listArmors, createArena, createWeapon
 }

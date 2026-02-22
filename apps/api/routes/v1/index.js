@@ -101,9 +101,10 @@ router.get('/games/:id/bets', optionalJwtAuth, gamesController.getBetCounts)
 router.post('/games/:id/sponsor', jwtAuth, gamesController.sponsor)
 
 // ==========================================
-// User Profile (user auth)
+// User Profile & Wallet (user auth)
 // ==========================================
 router.get('/users/me', jwtAuth, gamesController.getUserProfile)
+router.post('/wallet/convert', jwtAuth, gamesController.convertPoints)
 
 // ==========================================
 // Matchmaking Queue (agent + public)

@@ -129,20 +129,22 @@ async function hubLogin(req, res, next) {
     const existing = await db.query('SELECT * FROM users WHERE hub_user_id = $1', [hubUserId])
     if (existing.rows.length > 0) {
       user = existing.rows[0]
-      // display_name 동기화 (없으면 Hub 것으로 업데이트)
-      if (!user.display_name || (hubResult.displayName && hubResult.displayName !== user.display_name)) {
-        const newName = hubResult.displayName || hubDisplayName
-        await db.query('UPDATE users SET display_name = $1, updated_at = NOW() WHERE id = $2', [newName, user.id])
-        user.display_name = newName
-      }
+      // display_name 동기화 + hub_token 갱신
+      const newName = (hubResult.displayName && hubResult.displayName !== user.display_name)
+        ? hubResult.displayName : user.display_name || hubDisplayName
+      await db.query(
+        'UPDATE users SET display_name = $1, hub_token = $2, updated_at = NOW() WHERE id = $3',
+        [newName, hubToken, user.id]
+      )
+      user.display_name = newName
     } else {
       // 이메일로 기존 계정 매칭 시도
       if (hubResult.email) {
         const emailMatch = await db.query('SELECT * FROM users WHERE email = $1', [hubResult.email])
         if (emailMatch.rows.length > 0) {
           user = emailMatch.rows[0]
-          await db.query('UPDATE users SET hub_user_id = $1, display_name = COALESCE(display_name, $2), updated_at = NOW() WHERE id = $3',
-            [hubUserId, hubDisplayName, user.id])
+          await db.query('UPDATE users SET hub_user_id = $1, display_name = COALESCE(display_name, $2), hub_token = $3, updated_at = NOW() WHERE id = $4',
+            [hubUserId, hubDisplayName, hubToken, user.id])
           user.hub_user_id = hubUserId
           if (!user.display_name) user.display_name = hubDisplayName
         }
@@ -151,10 +153,10 @@ async function hubLogin(req, res, next) {
       if (!user) {
         // 신규 유저 생성 (password 없음)
         const result = await db.query(
-          `INSERT INTO users (email, display_name, role, hub_user_id, predictor_token)
-           VALUES ($1, $2, 'spectator', $3, $4)
+          `INSERT INTO users (email, display_name, role, hub_user_id, hub_token, predictor_token)
+           VALUES ($1, $2, 'spectator', $3, $4, $5)
            RETURNING *`,
-          [hubResult.email, hubDisplayName, hubUserId, req.predictorId || null]
+          [hubResult.email, hubDisplayName, hubUserId, hubToken, req.predictorId || null]
         )
         user = result.rows[0]
       }
