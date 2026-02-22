@@ -3,17 +3,24 @@ set -e
 API="http://127.0.0.1:3200/api/v1"
 
 echo "=== Login Admin ==="
-TOKEN=$(curl -s -X POST "$API/auth/login" \
+RESP=$(curl -s -X POST "$API/auth/login" \
   -H 'Content-Type: application/json' \
-  -d '{"email":"admin@titleclash.com","password":"admin1234"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])")
+  -d '{"email":"admin@clawrace.com","password":"admin1234"}')
+echo "$RESP"
+
+TOKEN=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['token'])" 2>/dev/null || echo "")
+if [ -z "$TOKEN" ]; then
+  echo "ERROR: Failed to get token"
+  exit 1
+fi
 echo "Token: ${TOKEN:0:20}..."
 
 echo ""
-echo "=== Create Game (longer lobby: 30 min) ==="
+echo "=== Create Test Game ==="
 GAME=$(curl -s -X POST "$API/admin/games" \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $TOKEN" \
-  -d '{"title":"Arena Battle #2","arena_slug":"the_pit","entry_fee":0,"max_entries":8,"max_ticks":60,"lobby_duration_min":30}')
+  -d '{"title":"Arena Battle #1","arena_slug":"the_pit","entry_fee":0,"max_entries":8,"max_ticks":60}')
 echo "$GAME"
 
 GAME_ID=$(echo "$GAME" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])" 2>/dev/null || echo "")

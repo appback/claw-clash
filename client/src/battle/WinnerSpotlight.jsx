@@ -9,7 +9,7 @@ export default function WinnerSpotlight({ game }) {
 
   const color = SLOT_COLORS[winner.slot % SLOT_COLORS.length]
   const weapon = WEAPON_EMOJI[winner.weapon_slug] || '\u2694\uFE0F'
-  const survivedSec = Math.round((winner.survived_ticks || 0) / 5)
+  const survivedSec = winner.survived_ticks || 0
 
   return (
     <div className="winner-spotlight" style={{ '--winner-color': color }}>

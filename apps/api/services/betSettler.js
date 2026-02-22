@@ -79,7 +79,7 @@ async function settle(gameId, results) {
       }
     }
 
-    // Settle guest bets (flat 2 pts per correct pick, record-only)
+    // Settle guest bets (3 credits per correct pick, record-only — client reads payout from results)
     if (guestBets.length > 0) {
       const guestWinners = guestBets.filter(b => b.slot === winnerSlot)
       const guestLosers = guestBets.filter(b => b.slot !== winnerSlot)
@@ -87,7 +87,7 @@ async function settle(gameId, results) {
       if (guestWinners.length > 0) {
         const guestWinIds = guestWinners.map(b => b.id)
         await client.query(
-          `UPDATE game_bets SET payout = 2, settled_at = now() WHERE id = ANY($1)`,
+          `UPDATE game_bets SET payout = 3, settled_at = now() WHERE id = ANY($1)`,
           [guestWinIds]
         )
       }

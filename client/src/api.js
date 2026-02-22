@@ -48,6 +48,9 @@ export const userApi = {
   },
   post(url, data) {
     return api.post(url, data, { headers: this._headers() })
+  },
+  put(url, data) {
+    return api.put(url, data, { headers: this._headers() })
   }
 }
 

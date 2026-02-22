@@ -37,8 +37,9 @@ export default function BattleStatsTable({ game }) {
               const weapon = WEAPON_EMOJI[entry.weapon_slug] || '\u2694\uFE0F'
               const armorEmoji = ARMOR_EMOJI[entry.armor_slug] || ''
               const medal = RANK_MEDALS[entry.final_rank]
-              const survivedSec = Math.round((entry.survived_ticks || 0) / 5)
-              const isEliminated = entry.final_rank > 1 && entry.survived_ticks < (game.max_ticks || 1500)
+              const survivedSec = entry.survived_ticks || 0
+              const maxSec = Math.round((game.max_ticks || 1500) / 5)
+              const isEliminated = entry.final_rank > 1 && (entry.survived_ticks || 0) < maxSec
               const rowClass = entry.final_rank === 1
                 ? 'stats-row-gold'
                 : entry.final_rank <= 3

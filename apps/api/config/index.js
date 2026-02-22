@@ -62,6 +62,7 @@ module.exports = {
 
   // AI defaults
   defaultFleeThreshold: 15,
+  stalemateDamageTimeout: 100,  // 100 ticks = 20s — spawn heal if no damage
 
   // Defense
   stayDamageReduction: 0.2,

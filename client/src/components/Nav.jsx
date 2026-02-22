@@ -118,9 +118,14 @@ export default function Nav() {
               {userPoints != null && (
                 <span className="nav-points-badge">{userPoints} pts</span>
               )}
-              <span className="nav-link" style={{ color: 'var(--primary)', cursor: 'default' }}>
+              <Link
+                to="/profile"
+                className={'nav-link' + (isActive('/profile') ? ' active' : '')}
+                onClick={() => setMenuOpen(false)}
+                style={{ color: 'var(--primary)' }}
+              >
                 {displayName}
-              </span>
+              </Link>
               <button className="nav-link" onClick={handleLogout} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0 }}>
                 Logout
               </button>

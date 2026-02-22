@@ -1,10 +1,12 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { publicApi, userApi } from '../api'
 import { SLOT_COLORS } from './AgentToken'
+import { addCredits } from '../utils/guestCredits'
 
 export default function BettingSummary({ gameId }) {
   const [data, setData] = useState(null)
   const isLoggedIn = !!localStorage.getItem('user_token')
+  const creditSettledRef = useRef(false)
 
   useEffect(() => {
     if (!gameId) return
@@ -26,11 +28,31 @@ export default function BettingSummary({ gameId }) {
   const totalBets = data.bets.reduce((s, b) => s + b.count, 0)
   const myBets = data.my_bets || []
   const isGuest = data.is_guest
+  const hasSettled = myBets.some(b => b.settled)
+
+  // Group my bets by slot
+  const myBetsBySlot = {}
+  for (const b of myBets) {
+    if (!myBetsBySlot[b.slot]) myBetsBySlot[b.slot] = { count: 0, totalAmount: 0, totalPayout: 0, settled: false }
+    myBetsBySlot[b.slot].count++
+    myBetsBySlot[b.slot].totalAmount += b.amount
+    myBetsBySlot[b.slot].totalPayout += b.payout
+    if (b.settled) myBetsBySlot[b.slot].settled = true
+  }
+
   const myTotalBet = myBets.reduce((s, b) => s + b.amount, 0)
   const myTotalPayout = myBets.reduce((s, b) => s + b.payout, 0)
   const myNet = myTotalPayout - myTotalBet
-  const hasSettled = myBets.some(b => b.settled)
-  const guestWon = isGuest && hasSettled && myTotalPayout > 0
+
+  // Guest credit settlement: add credits on win (once per game)
+  if (isGuest && hasSettled && myTotalPayout > 0 && !creditSettledRef.current) {
+    const settledKey = 'cc_settled_' + gameId
+    if (!sessionStorage.getItem(settledKey)) {
+      addCredits(myTotalPayout)
+      sessionStorage.setItem(settledKey, '1')
+    }
+    creditSettledRef.current = true
+  }
 
   return (
     <div className="card betting-summary">
@@ -42,7 +64,10 @@ export default function BettingSummary({ gameId }) {
           return (
             <div key={b.slot} className="betting-summary-slot">
               <span className="betting-summary-slot-label" style={{ color }}>Slot {b.slot}</span>
-              <span className="betting-summary-slot-count">{b.count} bet{b.count !== 1 ? 's' : ''}</span>
+              <span className="betting-summary-slot-count">
+                {b.count} bet{b.count !== 1 ? 's' : ''}
+                {b.total_amount > 0 && ` / ${b.total_amount} pts`}
+              </span>
             </div>
           )
         })}
@@ -52,15 +77,15 @@ export default function BettingSummary({ gameId }) {
         Total: {totalBets} bet{totalBets !== 1 ? 's' : ''}
       </div>
 
-      {myBets.length > 0 && !isGuest && (
+      {Object.keys(myBetsBySlot).length > 0 && !isGuest && (
         <div className="betting-summary-my">
           <h4>Your Bets</h4>
-          {myBets.map((b, i) => (
-            <div key={i} className="betting-summary-my-row">
-              <span style={{ color: SLOT_COLORS[b.slot % SLOT_COLORS.length] }}>Slot {b.slot}</span>
-              <span>{b.amount} pts</span>
-              <span className={b.payout > 0 ? 'text-win' : 'text-lose'}>
-                {b.settled ? (b.payout > 0 ? `+${b.payout}` : 'Lost') : 'Pending'}
+          {Object.entries(myBetsBySlot).map(([slot, info]) => (
+            <div key={slot} className="betting-summary-my-row">
+              <span style={{ color: SLOT_COLORS[slot % SLOT_COLORS.length] }}>Slot {slot}</span>
+              <span>{info.count > 1 ? `${info.count}x / ` : ''}{info.totalAmount} pts</span>
+              <span className={info.totalPayout > 0 ? 'text-win' : 'text-lose'}>
+                {info.settled ? (info.totalPayout > 0 ? `+${info.totalPayout}` : 'Lost') : 'Pending'}
               </span>
             </div>
           ))}
@@ -72,31 +97,26 @@ export default function BettingSummary({ gameId }) {
         </div>
       )}
 
-      {myBets.length > 0 && isGuest && (
+      {Object.keys(myBetsBySlot).length > 0 && isGuest && (
         <div className="betting-summary-my">
           <h4>Your Picks</h4>
-          {myBets.map((b, i) => (
-            <div key={i} className="betting-summary-my-row">
-              <span style={{ color: SLOT_COLORS[b.slot % SLOT_COLORS.length] }}>Slot {b.slot}</span>
-              <span className="text-muted">free</span>
-              <span className={b.payout > 0 ? 'text-win' : 'text-lose'}>
-                {b.settled ? (b.payout > 0 ? `+${b.payout} pts` : 'Lost') : 'Pending'}
+          {Object.entries(myBetsBySlot).map(([slot, info]) => (
+            <div key={slot} className="betting-summary-my-row">
+              <span style={{ color: SLOT_COLORS[slot % SLOT_COLORS.length] }}>Slot {slot}</span>
+              <span className="text-muted">{info.count} bet{info.count !== 1 ? 's' : ''}</span>
+              <span className={info.totalPayout > 0 ? 'text-win' : 'text-lose'}>
+                {info.settled ? (info.totalPayout > 0 ? `+${info.totalPayout} credits` : 'Lost') : 'Pending'}
               </span>
             </div>
           ))}
           {hasSettled && myTotalPayout > 0 && (
             <div className="betting-summary-guest-result text-win">
-              Would have earned: {myTotalPayout} pts
-            </div>
-          )}
-          {guestWon && (
-            <div className="betting-summary-guest-cta">
-              You picked the winner! Sign up to earn points next time.
+              Won: +{myTotalPayout} credits
             </div>
           )}
           {hasSettled && myTotalPayout === 0 && (
             <div className="betting-summary-guest-cta">
-              Sign up to bet with points and win real rewards!
+              Better luck next time! Sign up for real rewards.
             </div>
           )}
         </div>

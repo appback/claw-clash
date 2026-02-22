@@ -11,6 +11,7 @@ import HistoryPage from './pages/HistoryPage'
 import LoginPage from './pages/LoginPage'
 import AdminPage from './pages/AdminPage'
 import GamePage from './pages/GamePage'
+import ProfilePage from './pages/ProfilePage'
 import AuthCallbackPage from './pages/AuthCallbackPage'
 import './styles.css'
 
@@ -30,6 +31,7 @@ createRoot(document.getElementById('root')).render(
             <Route path="/history" element={<HistoryPage />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/game/:id" element={<GamePage />} />
+            <Route path="/profile" element={<ProfilePage />} />
             <Route path="/admin" element={<AdminPage />} />
             <Route path="/auth/callback" element={<AuthCallbackPage />} />
           </Routes>

@@ -15,6 +15,7 @@ const racesController = require('../../controllers/v1/races')
 const gamesController = require('../../controllers/v1/games')
 const queueController = require('../../controllers/v1/queue')
 const predictionsController = require('../../controllers/v1/predictions')
+const usersController = require('../../controllers/v1/users')
 const leaderboardController = require('../../controllers/v1/leaderboard')
 const statsController = require('../../controllers/v1/stats')
 const adminController = require('../../controllers/v1/admin')
@@ -103,7 +104,11 @@ router.post('/games/:id/sponsor', jwtAuth, gamesController.sponsor)
 // ==========================================
 // User Profile & Wallet (user auth)
 // ==========================================
-router.get('/users/me', jwtAuth, gamesController.getUserProfile)
+router.get('/users/me', jwtAuth, usersController.getProfile)
+router.put('/users/me/profile', jwtAuth, usersController.updateProfile)
+router.get('/users/me/bets', jwtAuth, usersController.getBetHistory)
+router.get('/users/me/sponsors', jwtAuth, usersController.getSponsorHistory)
+router.get('/users/me/wallet', jwtAuth, usersController.getHubWallet)
 router.post('/wallet/convert', jwtAuth, gamesController.convertPoints)
 
 // ==========================================

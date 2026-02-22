@@ -4,6 +4,7 @@ import AgentFace from './AgentFace'
 import CountdownTimer from '../components/CountdownTimer'
 import { publicApi, userApi } from '../api'
 import socket from '../socket'
+import { getCredits, useCredit } from '../utils/guestCredits'
 
 const BET_AMOUNTS = [1, 10, 100]
 
@@ -17,6 +18,15 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
   const [betCounts, setBetCounts] = useState({})
   const [myBets, setMyBets] = useState([])
   const [betLoading, setBetLoading] = useState(null)
+
+  // Pulse + reaction state
+  const prevBetCountsRef = useRef({})
+  const prevSponsorCountsRef = useRef({})
+  const [pulseSlots, setPulseSlots] = useState({})
+  const [reactionSlots, setReactionSlots] = useState({})
+
+  // Guest credits
+  const [guestCredits, setGuestCredits] = useState(getCredits())
 
   const isLoggedIn = !!localStorage.getItem('user_token')
 
@@ -67,6 +77,73 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
       .catch(() => {})
   }
 
+  // Detect bet count changes → pulse + reaction
+  useEffect(() => {
+    const prev = prevBetCountsRef.current
+    const newPulse = {}
+    const newReaction = {}
+    for (const slot of Object.keys(betCounts)) {
+      if ((prev[slot] || 0) < (betCounts[slot] || 0)) {
+        newPulse[slot] = 'bet'
+        newReaction[slot] = 'shake'
+      }
+    }
+    prevBetCountsRef.current = { ...betCounts }
+    if (Object.keys(newPulse).length > 0) {
+      setPulseSlots(p => ({ ...p, ...newPulse }))
+      setReactionSlots(p => ({ ...p, ...newReaction }))
+      setTimeout(() => {
+        setPulseSlots(p => {
+          const next = { ...p }
+          for (const s of Object.keys(newPulse)) delete next[s]
+          return next
+        })
+        setReactionSlots(p => {
+          const next = { ...p }
+          for (const s of Object.keys(newReaction)) delete next[s]
+          return next
+        })
+      }, 2000)
+    }
+  }, [betCounts])
+
+  // Detect sponsor count changes → pulse + reaction
+  useEffect(() => {
+    const sponsorCounts = {}
+    for (const entry of entries) {
+      if (entry.sponsorship) sponsorCounts[entry.slot] = entry.sponsorship.sponsor_count || 0
+    }
+    const prev = prevSponsorCountsRef.current
+    const newPulse = {}
+    const newReaction = {}
+    for (const slot of Object.keys(sponsorCounts)) {
+      if ((prev[slot] || 0) < (sponsorCounts[slot] || 0)) {
+        newPulse[slot] = 'sponsor'
+        newReaction[slot] = 'happy'
+      }
+    }
+    prevSponsorCountsRef.current = { ...sponsorCounts }
+    if (Object.keys(newPulse).length > 0) {
+      setPulseSlots(p => ({ ...p, ...newPulse }))
+      setReactionSlots(p => ({ ...p, ...newReaction }))
+      setTimeout(() => {
+        setPulseSlots(p => {
+          const next = { ...p }
+          for (const s of Object.keys(newPulse)) delete next[s]
+          return next
+        })
+        setReactionSlots(p => {
+          const next = { ...p }
+          for (const s of Object.keys(newReaction)) delete next[s]
+          return next
+        })
+      }, 2000)
+    }
+  }, [entries])
+
+  // Guest: find which slot already bet on
+  const guestBetSlot = (!isLoggedIn && myBets.length > 0) ? myBets[0].slot : null
+
   async function handleBet(slot, amount) {
     if (betLoading !== null) return
     setBetLoading(slot)
@@ -74,6 +151,10 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
       const api = isLoggedIn ? userApi : publicApi
       const res = await api.post('/games/' + game.id + '/bet', { slot, amount })
       if (onBetPlaced && res.data.remaining_points != null) onBetPlaced(res.data.remaining_points)
+      if (!isLoggedIn && res.data.guest_credits_used) {
+        useCredit()
+        setGuestCredits(getCredits())
+      }
       loadBetCounts()
     } catch (err) {
       const msg = err.response?.data?.message || 'Bet failed'
@@ -99,6 +180,9 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
             {entries.length}/{maxSlots} fighters joined &middot; Arena: {game.arena_name || 'The Pit'}
             {isBetting && userPoints != null && (
               <span> &middot; <span className="betting-points-inline">{userPoints} pts</span></span>
+            )}
+            {isBetting && !isLoggedIn && (
+              <span> &middot; <span className="betting-points-inline">{'\uD83D\uDCB0'} {guestCredits} credits</span></span>
             )}
           </p>
         </div>
@@ -134,19 +218,31 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
           const evdPct = Math.round((entry.armor_evasion || 0) * 100)
 
           const slotBetCount = betCounts[i] || 0
-          const slotMyBets = myBetsBySlot[i] || []
-          const myTotal = slotMyBets.reduce((s, b) => s + b.amount, 0)
+          const sponsorCount = sponsorship.sponsor_count || 0
+          const hasBetPulse = pulseSlots[i] === 'bet'
+          const hasSponsorPulse = pulseSlots[i] === 'sponsor'
+          const reaction = reactionSlots[i] || null
+
+          // Guest: disable other slot buttons if already bet on a slot
+          const guestOtherSlot = !isLoggedIn && guestBetSlot != null && guestBetSlot !== i
 
           return (
             <div key={i} className="lobby-slot" style={{ '--slot-color': color }}>
               <div className="lobby-slot-header">
                 <span className="lobby-slot-number" style={{ color }}>Slot {i}</span>
+                {isBetting && (
+                  <span className="lobby-slot-counts">
+                    <span className={hasSponsorPulse ? 'lobby-count-pulse' : ''} style={{ fontSize: Math.min(13 + sponsorCount * 0.1, 16) }}>S:{sponsorCount}</span>
+                    {' '}
+                    <span className={hasBetPulse ? 'lobby-count-pulse' : ''} style={{ fontSize: Math.min(13 + slotBetCount * 0.1, 16) }}>B:{slotBetCount}</span>
+                  </span>
+                )}
               </div>
 
               <div className="lobby-slot-visual">
                 <span className="lobby-weapon-icon">{weaponIcon}</span>
                 <div style={{ position: 'relative' }}>
-                  <AgentFace className="lobby-face" />
+                  <AgentFace className="lobby-face" reaction={reaction} />
                   {speakingSlots[i] && (
                     <div className="lobby-speech-bubble">{speakingSlots[i]}</div>
                   )}
@@ -200,14 +296,11 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
                   ) : (
                     <button
                       className="bet-amount-btn bet-amount-btn-free"
-                      disabled={betLoading !== null}
+                      disabled={betLoading !== null || guestCredits <= 0 || guestOtherSlot}
                       onClick={() => handleBet(i, 0)}
                     >
-                      {betLoading === i ? '..' : 'Bet'}
+                      {betLoading === i ? '..' : `Bet (\uD83D\uDCB0${guestCredits})`}
                     </button>
-                  )}
-                  {slotBetCount > 0 && (
-                    <span className="bet-count-label">{slotBetCount}</span>
                   )}
                 </div>
               )}

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { publicApi, userApi } from '../api'
 import { SLOT_COLORS } from './AgentToken'
 import socket from '../socket'
+import { getCredits } from '../utils/guestCredits'
 
 export default function ChatPanel({ gameId, gameState, userPoints, myBets }) {
   const [messages, setMessages] = useState([])
@@ -165,9 +166,9 @@ export default function ChatPanel({ gameId, gameState, userPoints, myBets }) {
       {isActive && !isLoggedIn && (
         <div className="chat-user-panel chat-user-panel-guest">
           <div className="chat-user-guest-info">
-            {'\uD83C\uDFB2'} {guestBetCount}/5 free bets used
+            {'\uD83D\uDCB0'} {getCredits()} credits
           </div>
-          <div className="chat-user-guest-cta">Sign up to earn points!</div>
+          <div className="chat-user-guest-cta">Sign up for more rewards!</div>
         </div>
       )}
     </div>

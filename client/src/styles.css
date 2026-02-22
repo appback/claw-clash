@@ -2241,13 +2241,7 @@ a:hover {
   color: var(--bg-primary);
 }
 
-.bet-count-label {
-  font-size: 0.625rem;
-  font-weight: 700;
-  color: var(--text-muted);
-  min-width: 16px;
-  text-align: center;
-}
+/* .bet-count-label removed — counts moved to slot header */
 
 /* ========================================
    Betting Summary (BettingSummary.jsx)
@@ -2414,5 +2408,76 @@ a:hover {
   padding: 6px 8px;
   background: var(--accent-dim);
   border-radius: var(--radius-sm);
+}
+
+/* ========================================
+   Lobby Count Pulse & AgentFace Reactions
+   ======================================== */
+
+.lobby-slot-counts {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.lobby-count-pulse {
+  animation: count-bounce 0.8s both;
+  color: var(--warning);
+}
+
+@keyframes count-bounce {
+  0%   { transform: scale(1); }
+  12%  { transform: scale(1.35); color: var(--accent); }
+  24%  { transform: scale(0.95); }
+  36%  { transform: scale(1.15); }
+  54%  { transform: scale(0.98); }
+  68%  { transform: scale(1.05); }
+  82%  { transform: scale(0.99); }
+  100% { transform: scale(1); }
+}
+
+/* AgentFace shake reaction */
+.agent-face-shake {
+  animation: face-shake 0.5s ease-out;
+}
+
+@keyframes face-shake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-3px); }
+  30% { transform: translateX(3px); }
+  45% { transform: translateX(-2px); }
+  60% { transform: translateX(2px); }
+  75% { transform: translateX(-1px); }
+}
+
+/* AgentFace happy reaction */
+.agent-face-happy-anim {
+  animation: face-happy 0.4s ease-out;
+}
+
+@keyframes face-happy {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+.agent-face-happy-bubble {
+  position: absolute;
+  top: -8px;
+  right: -12px;
+  font-size: 0.75rem;
+  background: var(--warning);
+  color: #1a1a2e;
+  padding: 2px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+  animation: happy-bubble-pop 0.4s ease-out;
+  pointer-events: none;
+  z-index: 10;
+}
+
+@keyframes happy-bubble-pop {
+  0% { opacity: 0; transform: scale(0.5) translateY(4px); }
+  100% { opacity: 1; transform: scale(1) translateY(0); }
 }
 

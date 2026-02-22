@@ -120,7 +120,8 @@ function startBattle(game, arena, entries) {
     events: [],
     eliminations: [],
     powerups: [],
-    firstBlood: false
+    firstBlood: false,
+    lastDamageTick: 0
   }
 
   gameStateManager.initGame(gameId, initialState)
@@ -203,7 +204,7 @@ function processTick(gameId) {
     // Apply shrink zone damage
     applyShrinkDamage(livingAgents, shrinkPhase, game.arena.grid_width, game.arena.grid_height, events, tick)
 
-    // Update survival ticks
+    // Update survival ticks (1 per second)
     for (const agent of game.agents.filter(a => a.alive)) {
       agent.survivedTicks++
     }
@@ -211,6 +212,39 @@ function processTick(gameId) {
     // Decrement strategy cooldowns once per second
     for (const agent of livingAgents) {
       if (agent.strategyCooldown > 0) agent.strategyCooldown--
+    }
+
+    // Stalemate heal spawn: no damage for stalemateDamageTimeout ticks → spawn heal at center
+    if (livingAgents.length >= 2 && tick - game.lastDamageTick >= config.stalemateDamageTimeout) {
+      const cx = Math.floor(game.arena.grid_width / 2)
+      const cy = Math.floor(game.arena.grid_height / 2)
+      const occupiedSet = new Set()
+      for (const a of game.agents) { if (a.alive) occupiedSet.add(`${a.x},${a.y}`) }
+      for (const p of game.powerups) { occupiedSet.add(`${p.x},${p.y}`) }
+
+      // Find spawn position: center first, then nearby cells
+      let spawnPos = null
+      if (!occupiedSet.has(`${cx},${cy}`) && getTerrain(game.arena.terrain, cx, cy) !== 1) {
+        spawnPos = { x: cx, y: cy }
+      } else {
+        for (let r = 1; r <= 3 && !spawnPos; r++) {
+          for (let dy = -r; dy <= r && !spawnPos; dy++) {
+            for (let dx = -r; dx <= r && !spawnPos; dx++) {
+              if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue
+              const nx = cx + dx, ny = cy + dy
+              if (nx < 0 || nx >= game.arena.grid_width || ny < 0 || ny >= game.arena.grid_height) continue
+              if (occupiedSet.has(`${nx},${ny}`) || getTerrain(game.arena.terrain, nx, ny) === 1) continue
+              spawnPos = { x: nx, y: ny }
+            }
+          }
+        }
+      }
+
+      if (spawnPos) {
+        game.powerups.push({ type: 'heal_pack', x: spawnPos.x, y: spawnPos.y, spawnTick: tick })
+        events.push({ type: 'powerup_spawn', powerup: 'heal_pack', x: spawnPos.x, y: spawnPos.y })
+      }
+      game.lastDamageTick = tick  // reset to prevent continuous spawning
     }
   }
 
@@ -394,7 +428,21 @@ function decideMove(agent, game, shrinkPhase, occupied) {
   // Anti-deadlock
   const forceEngage = agent.consecutiveFleeTicks >= 50
 
-  // Priority 2: Flee threshold (personality-adjusted)
+  // Priority 2: Low-HP heal pack (before flee — survive > run)
+  if (!forceEngage && agent.hp < agent.maxHp * 0.5 && game.powerups.length > 0) {
+    const healPack = findNearestPowerup(agent, game, 'heal_pack')
+    if (healPack) {
+      const nearestEnemy = enemies[0]
+      const enemyDist = nearestEnemy ? manhattanDist(agent, nearestEnemy) : Infinity
+      // Cautious: skip if enemy within 2 tiles
+      const skipForDanger = agent.personality === 'cautious' && enemyDist <= 2
+      if (!skipForDanger && enemyDist > 1) {
+        return moveToward(agent, healPack, game.arena, occupied)
+      }
+    }
+  }
+
+  // Priority 3: Flee threshold (personality-adjusted)
   const baseFleeThreshold = strategy.flee_threshold != null ? strategy.flee_threshold : config.defaultFleeThreshold
   const fleeThreshold = Math.floor(baseFleeThreshold * personality.fleeMultiplier)
 
@@ -421,17 +469,24 @@ function decideMove(agent, game, shrinkPhase, occupied) {
     }
   }
 
-  // Priority 4: Powerup collection
+  // Priority 4: Powerup collection (expanded range)
   if (game.powerups.length > 0) {
     const nearestPowerup = findNearestPowerup(agent, game, null)
     if (nearestPowerup) {
       const puDist = manhattanDist(agent, nearestPowerup)
+      // Immediate grab: 2 tiles
       if (puDist <= 2) {
         return moveToward(agent, nearestPowerup, game.arena, occupied)
       }
-      if (nearestPowerup.type === 'heal_pack' && agent.hp < agent.maxHp * 0.7 && puDist <= 4) {
+      // Heal pack + low HP: unlimited range
+      if (nearestPowerup.type === 'heal_pack' && agent.hp < agent.maxHp * 0.5) {
         return moveToward(agent, nearestPowerup, game.arena, occupied)
       }
+      // Active pursuit: 6 tiles
+      if (puDist <= 6) {
+        return moveToward(agent, nearestPowerup, game.arena, occupied)
+      }
+      // Fallback: closer than nearest enemy
       const nearestEnemy = enemies[0]
       if (nearestEnemy && puDist < manhattanDist(agent, nearestEnemy)) {
         return moveToward(agent, nearestPowerup, game.arena, occupied)
@@ -754,6 +809,9 @@ function resolveSingleAttack(agent, game, events) {
   if (isSkill) {
     agent.score += config.scoreSkillHit
   }
+
+  // Track last damage tick for stalemate detection
+  game.lastDamageTick = game.tick
 
   events.push({
     type: 'damage',
