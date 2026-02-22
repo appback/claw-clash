@@ -1705,7 +1705,14 @@ a:hover {
   font-size: 0.875rem;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
+}
+
+.chat-viewers {
+  font-weight: 400;
+  font-size: 0.8rem;
+  color: var(--text-muted);
 }
 
 .chat-live-dot {

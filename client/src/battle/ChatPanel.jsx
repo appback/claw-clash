@@ -4,7 +4,7 @@ import { SLOT_COLORS } from './AgentToken'
 import socket from '../socket'
 import { getCredits } from '../utils/guestCredits'
 
-export default function ChatPanel({ gameId, gameState, userPoints, myBets }) {
+export default function ChatPanel({ gameId, gameState, userPoints, myBets, viewers }) {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -89,7 +89,8 @@ export default function ChatPanel({ gameId, gameState, userPoints, myBets }) {
   return (
     <div className="chat-panel">
       <div className="chat-header">
-        Chat {isActive && <span className="chat-live-dot" />}
+        <span>Chat {isActive && <span className="chat-live-dot" />}</span>
+        {viewers > 0 && <span className="chat-viewers">{'\uD83D\uDC41'} {viewers}</span>}
       </div>
 
       <div className="chat-messages" ref={scrollRef}>

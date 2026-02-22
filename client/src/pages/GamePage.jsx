@@ -136,9 +136,6 @@ export default function GamePage() {
         <p className="page-subtitle">
           Arena: {game.arena_name} &middot; {game.entry_count || 0}/{game.max_entries} fighters
           &middot; {Math.floor((game.max_ticks || 1500) / 5 / 60)} min battle
-          {isBattle && viewers > 0 && (
-            <span> &middot; {viewers} watching</span>
-          )}
         </p>
       </div>
 
@@ -164,7 +161,7 @@ export default function GamePage() {
             />
           </div>
           <div className="game-sidebar">
-            <ChatPanel gameId={id} gameState={game.state} userPoints={userPoints} myBets={myBets} />
+            <ChatPanel gameId={id} gameState={game.state} userPoints={userPoints} myBets={myBets} viewers={viewers} />
           </div>
         </div>
       )}
@@ -183,7 +180,7 @@ export default function GamePage() {
             />
           </div>
           <div className="game-sidebar">
-            <ChatPanel gameId={id} gameState={game.state} userPoints={userPoints} myBets={myBets} />
+            <ChatPanel gameId={id} gameState={game.state} userPoints={userPoints} myBets={myBets} viewers={viewers} />
           </div>
         </div>
       )}
@@ -201,7 +198,7 @@ export default function GamePage() {
             />
           </div>
           <div className="game-sidebar">
-            <ChatPanel gameId={id} gameState={game.state} userPoints={userPoints} myBets={myBets} />
+            <ChatPanel gameId={id} gameState={game.state} userPoints={userPoints} myBets={myBets} viewers={viewers} />
           </div>
         </div>
       )}
