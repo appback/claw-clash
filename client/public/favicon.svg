@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ef4444"/>
+      <stop offset="100%" stop-color="#f97316"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#g)"/>
+  <!-- body -->
+  <ellipse cx="32" cy="34" rx="14" ry="10" fill="white"/>
+  <!-- left claw -->
+  <path d="M14 28c-3-4-2-8 1-10s7 0 8 4l-4 3" fill="white"/>
+  <path d="M14 28c-1-2 0-5 2-6" stroke="url(#g)" stroke-width="1.5" fill="none"/>
+  <!-- right claw -->
+  <path d="M50 28c3-4 2-8-1-10s-7 0-8 4l4 3" fill="white"/>
+  <path d="M50 28c1-2 0-5-2-6" stroke="url(#g)" stroke-width="1.5" fill="none"/>
+  <!-- eyes -->
+  <circle cx="27" cy="30" r="3" fill="url(#g)"/>
+  <circle cx="37" cy="30" r="3" fill="url(#g)"/>
+  <!-- eye stalks -->
+  <line x1="27" y1="27" x2="25" y2="22" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="25" cy="21" r="2.5" fill="white"/>
+  <circle cx="25" cy="21" r="1.5" fill="url(#g)"/>
+  <line x1="37" y1="27" x2="39" y2="22" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+  <circle cx="39" cy="21" r="2.5" fill="white"/>
+  <circle cx="39" cy="21" r="1.5" fill="url(#g)"/>
+  <!-- legs -->
+  <line x1="22" y1="38" x2="16" y2="44" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  <line x1="26" y1="40" x2="22" y2="46" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  <line x1="42" y1="38" x2="48" y2="44" stroke="white" stroke-width="2" stroke-linecap="round"/>
+  <line x1="38" y1="40" x2="42" y2="46" stroke="white" stroke-width="2" stroke-linecap="round"/>
+</svg>
