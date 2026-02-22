@@ -2,6 +2,7 @@ import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { ToastProvider } from './components/Toast'
+import { LangProvider } from './i18n'
 import Nav from './components/Nav'
 import Footer from './components/Footer'
 import HomePage from './pages/HomePage'
@@ -19,6 +20,7 @@ document.documentElement.dataset.theme = savedTheme
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
+    <LangProvider>
     <BrowserRouter>
       <ToastProvider>
         <Nav />
@@ -37,5 +39,6 @@ createRoot(document.getElementById('root')).render(
         <Footer />
       </ToastProvider>
     </BrowserRouter>
+    </LangProvider>
   </React.StrictMode>
 )

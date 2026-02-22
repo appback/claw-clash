@@ -1,9 +1,11 @@
 import React from 'react'
 import { SLOT_COLORS, WEAPON_EMOJI, ARMOR_EMOJI } from './AgentToken'
+import { useLang } from '../i18n'
 
 const RANK_MEDALS = { 1: '\uD83E\uDD47', 2: '\uD83E\uDD48', 3: '\uD83E\uDD49' }
 
 export default function BattleStatsTable({ game }) {
+  const { t } = useLang()
   const entries = game.entries || []
   const sorted = [...entries]
     .filter(e => e.final_rank != null)
@@ -13,22 +15,22 @@ export default function BattleStatsTable({ game }) {
 
   return (
     <div className="card battle-stats-table">
-      <h2 className="card-title">Battle Stats</h2>
+      <h2 className="card-title">{t('battleStats.title')}</h2>
       <div className="battle-stats-scroll mt-md">
         <table className="stats-table">
           <thead>
             <tr>
-              <th className="stats-th-rank">Rank</th>
-              <th className="stats-th-slot">Slot</th>
-              <th className="stats-th-name">Agent</th>
-              <th className="stats-th-weapon">Weapon</th>
-              <th className="stats-th-armor">Armor</th>
-              <th className="stats-th-num">Score</th>
-              <th className="stats-th-num">Kills</th>
-              <th className="stats-th-num">DMG Dealt</th>
-              <th className="stats-th-num">DMG Taken</th>
-              <th className="stats-th-num">Survived</th>
-              <th className="stats-th-status">Status</th>
+              <th className="stats-th-rank">{t('battleStats.rank')}</th>
+              <th className="stats-th-slot">{t('battleStats.slot')}</th>
+              <th className="stats-th-name">{t('battleStats.agent')}</th>
+              <th className="stats-th-weapon">{t('battleStats.weapon')}</th>
+              <th className="stats-th-armor">{t('battleStats.armor')}</th>
+              <th className="stats-th-num">{t('battleStats.score')}</th>
+              <th className="stats-th-num">{t('battleStats.kills')}</th>
+              <th className="stats-th-num">{t('battleStats.dmgDealt')}</th>
+              <th className="stats-th-num">{t('battleStats.dmgTaken')}</th>
+              <th className="stats-th-num">{t('battleStats.survived')}</th>
+              <th className="stats-th-status">{t('battleStats.status')}</th>
             </tr>
           </thead>
           <tbody>
@@ -71,7 +73,7 @@ export default function BattleStatsTable({ game }) {
                   <td className="stats-td-num">{survivedSec}s</td>
                   <td>
                     <span className={isEliminated ? 'stats-status-eliminated' : 'stats-status-survived'}>
-                      {isEliminated ? 'Eliminated' : 'Survived'}
+                      {isEliminated ? t('battleStats.eliminated') : t('battleStats.survivedStatus')}
                     </span>
                   </td>
                 </tr>

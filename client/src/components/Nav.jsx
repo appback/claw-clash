@@ -3,6 +3,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { publicApi, userApi } from '../api'
 import socket from '../socket'
 import ThemeToggle from './ThemeToggle'
+import LangToggle from './LangToggle'
+import { useLang } from '../i18n'
 
 function getAuthState() {
   const isAdmin = !!localStorage.getItem('admin_token')
@@ -13,6 +15,7 @@ function getAuthState() {
 }
 
 export default function Nav() {
+  const { t } = useLang()
   const { pathname } = useLocation()
   const navigate = useNavigate()
   const [menuOpen, setMenuOpen] = useState(false)
@@ -65,12 +68,12 @@ export default function Nav() {
   }
 
   const links = [
-    { to: '/', label: 'Home' },
-    { to: '/leaderboard', label: 'Leaderboard' },
+    { to: '/', label: t('nav.home') },
+    { to: '/leaderboard', label: t('nav.leaderboard') },
   ]
 
   if (auth.isAdmin) {
-    links.push({ to: '/admin', label: 'Admin' })
+    links.push({ to: '/admin', label: t('nav.admin') })
   }
 
   function isActive(to) {
@@ -86,7 +89,7 @@ export default function Nav() {
         <Link to="/" className="nav-brand">
           {'\uD83E\uDD80'} Claw Clash
           {queueCount > 0 && (
-            <span className="nav-queue-badge" title={`${queueCount} fighters in queue`}>
+            <span className="nav-queue-badge" title={t('nav.fightersInQueue', { count: queueCount })}>
               {'\u2694\uFE0F'}{queueCount}
             </span>
           )}
@@ -94,7 +97,7 @@ export default function Nav() {
         <button
           className="nav-toggle"
           onClick={() => setMenuOpen(!menuOpen)}
-          aria-label="Toggle menu"
+          aria-label={t('nav.toggleMenu')}
           aria-expanded={menuOpen}
         >
           <span className="nav-toggle-bar" />
@@ -126,7 +129,7 @@ export default function Nav() {
                 {displayName}
               </Link>
               <button className="nav-link" onClick={handleLogout} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 0 }}>
-                Logout
+                {t('nav.logout')}
               </button>
             </>
           ) : (
@@ -135,9 +138,10 @@ export default function Nav() {
               className={'nav-link' + (isActive('/login') ? ' active' : '')}
               onClick={() => setMenuOpen(false)}
             >
-              Login
+              {t('nav.login')}
             </Link>
           )}
+          <LangToggle />
           <ThemeToggle />
         </div>
       </div>

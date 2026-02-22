@@ -2,13 +2,15 @@ import React, { useState, useEffect } from 'react'
 import { publicApi } from '../api'
 import GameCard from '../components/GameCard'
 import Loading from '../components/Loading'
+import { useLang } from '../i18n'
 
 const GAME_TABS = [
-  { key: 'active', label: 'Active', states: ['created', 'lobby', 'betting', 'battle'] },
-  { key: 'ended', label: 'Ended', states: ['ended'] }
+  { key: 'active', states: ['created', 'lobby', 'betting', 'battle'] },
+  { key: 'ended', states: ['ended'] }
 ]
 
 export default function HomePage() {
+  const { t } = useLang()
   const [gameTab, setGameTab] = useState('active')
   const [allGames, setAllGames] = useState([])
   const [loading, setLoading] = useState(true)
@@ -36,14 +38,14 @@ export default function HomePage() {
     return () => clearInterval(interval)
   }, [])
 
-  const currentGameTab = GAME_TABS.find(t => t.key === gameTab)
+  const currentGameTab = GAME_TABS.find(tab => tab.key === gameTab)
   const games = allGames.filter(g => currentGameTab.states.includes(g.state))
 
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">{'\uD83E\uDD80'} Claw Clash</h1>
-        <p className="page-subtitle">AI crabs battle, humans sponsor and bet</p>
+        <h1 className="page-title">{'\uD83E\uDD80'} {t('home.title')}</h1>
+        <p className="page-subtitle">{t('home.subtitle')}</p>
       </div>
 
       {stats && (
@@ -53,7 +55,7 @@ export default function HomePage() {
               <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--accent)' }}>
                 {stats.total_games}
               </div>
-              <div className="text-muted" style={{ fontSize: '0.8125rem' }}>Battles</div>
+              <div className="text-muted" style={{ fontSize: '0.8125rem' }}>{t('home.battles')}</div>
             </div>
           )}
           {stats.total_agents != null && (
@@ -61,7 +63,7 @@ export default function HomePage() {
               <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--accent)' }}>
                 {stats.total_agents}
               </div>
-              <div className="text-muted" style={{ fontSize: '0.8125rem' }}>AI Fighters</div>
+              <div className="text-muted" style={{ fontSize: '0.8125rem' }}>{t('home.aiFighters')}</div>
             </div>
           )}
           {stats.total_predictions != null && (
@@ -69,7 +71,7 @@ export default function HomePage() {
               <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--accent)' }}>
                 {stats.total_predictions}
               </div>
-              <div className="text-muted" style={{ fontSize: '0.8125rem' }}>Predictions</div>
+              <div className="text-muted" style={{ fontSize: '0.8125rem' }}>{t('home.predictions')}</div>
             </div>
           )}
         </div>
@@ -80,17 +82,17 @@ export default function HomePage() {
       ) : (
         <>
           <div className="tabs">
-            {GAME_TABS.map(t => {
-              const count = allGames.filter(g => t.states.includes(g.state)).length
+            {GAME_TABS.map(tab => {
+              const count = allGames.filter(g => tab.states.includes(g.state)).length
               return (
                 <button
-                  key={t.key}
-                  className={'tab' + (gameTab === t.key ? ' active' : '')}
-                  onClick={() => setGameTab(t.key)}
+                  key={tab.key}
+                  className={'tab' + (gameTab === tab.key ? ' active' : '')}
+                  onClick={() => setGameTab(tab.key)}
                 >
-                  {t.label}
+                  {tab.key === 'active' ? t('home.tabActive') : t('home.tabEnded')}
                   {count > 0 && (
-                    <span className={'badge ' + (t.key === 'active' ? 'badge-battle' : 'badge-finished')} style={{ marginLeft: 6 }}>{count}</span>
+                    <span className={'badge ' + (tab.key === 'active' ? 'badge-battle' : 'badge-finished')} style={{ marginLeft: 6 }}>{count}</span>
                   )}
                 </button>
               )
@@ -101,8 +103,8 @@ export default function HomePage() {
             <div className="empty-state">
               <div className="empty-state-icon">{'\u2694\uFE0F'}</div>
               <div className="empty-state-text">
-                {gameTab === 'active' && 'No active battles right now'}
-                {gameTab === 'ended' && 'No finished battles yet'}
+                {gameTab === 'active' && t('home.noActiveBattles')}
+                {gameTab === 'ended' && t('home.noEndedBattles')}
               </div>
             </div>
           ) : (

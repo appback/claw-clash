@@ -3,8 +3,10 @@ import { publicApi, userApi } from '../api'
 import { SLOT_COLORS } from './AgentToken'
 import socket from '../socket'
 import { getCredits } from '../utils/guestCredits'
+import { useLang } from '../i18n'
 
 export default function ChatPanel({ gameId, gameState, userPoints, myBets, viewers }) {
+  const { t } = useLang()
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
@@ -89,22 +91,22 @@ export default function ChatPanel({ gameId, gameState, userPoints, myBets, viewe
   return (
     <div className="chat-panel">
       <div className="chat-header">
-        <span>Chat {isActive && <span className="chat-live-dot" />}</span>
+        <span>{t('chat.title')} {isActive && <span className="chat-live-dot" />}</span>
         {viewers > 0 && <span className="chat-viewers">{'\uD83D\uDC41'} {viewers}</span>}
       </div>
 
       <div className="chat-messages" ref={scrollRef}>
         {messages.length === 0 ? (
-          <div className="chat-empty">No messages yet</div>
+          <div className="chat-empty">{t('chat.noMessages')}</div>
         ) : (
           messages.map(msg => (
             <div key={msg.id} className={'chat-msg chat-msg-' + msg.msg_type}>
               <span className="chat-msg-sender">
-                {msg.msg_type === 'system' ? '[System]'
+                {msg.msg_type === 'system' ? t('chat.system')
                   : msg.msg_type === 'human_chat'
-                    ? (msg.sender_name ? `[${msg.sender_name}]` : '[Spectator]')
-                  : msg.slot != null ? `[Slot ${msg.slot}]`
-                  : '[Unknown]'}
+                    ? (msg.sender_name ? `[${msg.sender_name}]` : t('chat.spectator'))
+                  : msg.slot != null ? t('chat.slotSender', { slot: msg.slot })
+                  : t('chat.unknown')}
               </span>
               <span className="chat-msg-text">{msg.message}</span>
             </div>
@@ -114,31 +116,31 @@ export default function ChatPanel({ gameId, gameState, userPoints, myBets, viewe
 
       {isActive && isLoggedIn && (
         <form className="chat-input-form" onSubmit={handleSend}>
-          <label className="chat-anon-toggle" title="Send anonymously">
+          <label className="chat-anon-toggle" title={t('chat.anonTitle')}>
             <input
               type="checkbox"
               checked={anonymous}
               onChange={e => setAnonymous(e.target.checked)}
             />
-            <span className="chat-anon-label">Anon</span>
+            <span className="chat-anon-label">{t('chat.anon')}</span>
           </label>
           <input
             className="chat-input"
             type="text"
             value={input}
             onChange={e => setInput(e.target.value)}
-            placeholder={anonymous ? 'Send anonymously...' : 'Send a message...'}
+            placeholder={anonymous ? t('chat.sendAnonymously') : t('chat.sendMessage')}
             maxLength={200}
             disabled={sending}
           />
           <button className="btn btn-primary btn-sm" type="submit" disabled={sending || !input.trim()}>
-            Send
+            {t('common.send')}
           </button>
         </form>
       )}
 
       {isActive && !isLoggedIn && (
-        <div className="chat-login-hint">Log in to chat</div>
+        <div className="chat-login-hint">{t('chat.loginToChat')}</div>
       )}
 
       {/* User asset panel */}
@@ -149,15 +151,15 @@ export default function ChatPanel({ gameId, gameState, userPoints, myBets, viewe
           </div>
           {myBets && myBets.length > 0 && (
             <div className="chat-user-bets">
-              <div className="chat-user-bets-label">This game:</div>
+              <div className="chat-user-bets-label">{t('chat.thisGame')}</div>
               {Object.entries(betsBySlot).map(([slot, amount]) => (
                 <div key={slot} className="chat-user-bet-row">
-                  <span style={{ color: SLOT_COLORS[slot % SLOT_COLORS.length] }}>Slot {slot}</span>
+                  <span style={{ color: SLOT_COLORS[slot % SLOT_COLORS.length] }}>{t('common.slot')} {slot}</span>
                   <span>{'\uD83C\uDF56'} {amount}</span>
                 </div>
               ))}
               {totalBet > 0 && (
-                <div className="chat-user-bet-total">Total: {'\uD83C\uDF56'} {totalBet}</div>
+                <div className="chat-user-bet-total">{t('chat.total')} {'\uD83C\uDF56'} {totalBet}</div>
               )}
             </div>
           )}
@@ -167,9 +169,9 @@ export default function ChatPanel({ gameId, gameState, userPoints, myBets, viewe
       {isActive && !isLoggedIn && (
         <div className="chat-user-panel chat-user-panel-guest">
           <div className="chat-user-guest-info">
-            {'\uD83D\uDCB0'} {getCredits()} credits
+            {'\uD83D\uDCB0'} {t('chat.credits', { count: getCredits() })}
           </div>
-          <div className="chat-user-guest-cta">Sign up for more rewards!</div>
+          <div className="chat-user-guest-cta">{t('chat.signUp')}</div>
         </div>
       )}
     </div>

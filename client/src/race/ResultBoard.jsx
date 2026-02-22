@@ -1,4 +1,5 @@
 import React from 'react'
+import { useLang } from '../i18n'
 
 function rankClass(rank) {
   if (rank === 1) return 'result-rank-1'
@@ -8,6 +9,8 @@ function rankClass(rank) {
 }
 
 export default function ResultBoard({ entries }) {
+  const { t } = useLang()
+
   if (!entries || entries.length === 0) {
     return null
   }
@@ -21,7 +24,7 @@ export default function ResultBoard({ entries }) {
 
   return (
     <div className="result-board card">
-      <h2 className="card-title">Final Results</h2>
+      <h2 className="card-title">{t('result.finalResults')}</h2>
       <div className="mt-md">
         {sorted.map((entry, i) => (
           <div key={entry.agent_id} className="result-row">

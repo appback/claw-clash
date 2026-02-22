@@ -1,8 +1,10 @@
 import React, { useState } from 'react'
 import { publicApi } from '../api'
 import { useToast } from '../components/Toast'
+import { useLang } from '../i18n'
 
 export default function PredictionPanel({ race, myPrediction, onPredict }) {
+  const { t } = useLang()
   const toast = useToast()
   const [selected, setSelected] = useState(null)
   const [submitting, setSubmitting] = useState(false)
@@ -16,13 +18,13 @@ export default function PredictionPanel({ race, myPrediction, onPredict }) {
   if (myPrediction) {
     return (
       <div className="prediction-panel">
-        <h3 className="prediction-panel-title">Your Prediction</h3>
+        <h3 className="prediction-panel-title">{t('prediction.title')}</h3>
         <div className="mt-md">
           <p>
-            You picked: <strong className="text-accent">{myPrediction.agent_name}</strong>
+            {t('race.youPicked')} <strong className="text-accent">{myPrediction.agent_name}</strong>
           </p>
           <p className="text-muted mt-sm">
-            Prediction locked. Good luck!
+            {t('prediction.predictionLocked')}
           </p>
         </div>
       </div>
@@ -32,8 +34,8 @@ export default function PredictionPanel({ race, myPrediction, onPredict }) {
   if (entries.length === 0) {
     return (
       <div className="prediction-panel">
-        <h3 className="prediction-panel-title">Predict the Winner</h3>
-        <p className="text-muted mt-md">No racers registered yet. Check back soon!</p>
+        <h3 className="prediction-panel-title">{t('prediction.predictWinner')}</h3>
+        <p className="text-muted mt-md">{t('prediction.noRacers')}</p>
       </div>
     )
   }
@@ -48,9 +50,9 @@ export default function PredictionPanel({ race, myPrediction, onPredict }) {
       })
       const agentName = entries.find(e => e.agent_id === selected)?.agent_name || 'Unknown'
       onPredict({ ...res.data, agent_name: agentName })
-      toast.success('Prediction submitted!')
+      toast.success(t('prediction.submitted'))
     } catch (err) {
-      const msg = err.response?.data?.message || 'Failed to submit prediction'
+      const msg = err.response?.data?.message || t('prediction.failedSubmit')
       toast.error(msg)
     } finally {
       setSubmitting(false)
@@ -59,9 +61,9 @@ export default function PredictionPanel({ race, myPrediction, onPredict }) {
 
   return (
     <div className="prediction-panel">
-      <h3 className="prediction-panel-title">Predict the Winner</h3>
+      <h3 className="prediction-panel-title">{t('prediction.predictWinner')}</h3>
       <p className="text-muted" style={{ fontSize: '0.8125rem', marginBottom: '12px' }}>
-        Pick who you think will win this race
+        {t('prediction.pickWinner')}
       </p>
       <div className="prediction-agents">
         {entries.map(entry => (
@@ -81,7 +83,7 @@ export default function PredictionPanel({ race, myPrediction, onPredict }) {
         disabled={!selected || submitting}
         onClick={handleSubmit}
       >
-        {submitting ? 'Submitting...' : 'Confirm Prediction'}
+        {submitting ? t('prediction.submitting') : t('prediction.confirmPrediction')}
       </button>
     </div>
   )

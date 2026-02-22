@@ -4,7 +4,6 @@ import { publicApi, userApi } from '../api'
 import { useToast } from '../components/Toast'
 import Loading from '../components/Loading'
 import CountdownTimer from '../components/CountdownTimer'
-import { STATE_LABELS } from '../components/GameCard'
 import LobbyView from '../battle/LobbyView'
 import BattleArena from '../battle/BattleArena'
 import BattleReplay from '../battle/BattleReplay'
@@ -15,8 +14,10 @@ import BettingSummary from '../battle/BettingSummary'
 import ChatPanel from '../battle/ChatPanel'
 import useBattleState from '../battle/useBattleState'
 import socket from '../socket'
+import { useLang } from '../i18n'
 
 export default function GamePage() {
+  const { t } = useLang()
   const { id } = useParams()
   const toast = useToast()
   const [game, setGame] = useState(null)
@@ -107,23 +108,23 @@ export default function GamePage() {
             .catch(() => {})
         }
       })
-      .catch(() => toast.error('Failed to load game'))
+      .catch(() => toast.error(t('game.failedLoad')))
       .finally(() => setLoading(false))
   }
 
   async function handleSponsor(slot, boostType) {
     try {
       await userApi.post('/games/' + id + '/sponsor', { slot, boost_type: boostType })
-      toast.success(`Sponsored Slot ${slot}!`)
+      toast.success(t('game.sponsored', { slot }))
       loadGame() // refresh to show updated stats
     } catch (err) {
-      const msg = err.response?.data?.message || 'Sponsorship failed'
+      const msg = err.response?.data?.message || t('game.sponsorFailed')
       toast.error(msg)
     }
   }
 
   if (loading) return <Loading />
-  if (!game) return <div className="empty-state"><div className="empty-state-text">Game not found</div></div>
+  if (!game) return <div className="empty-state"><div className="empty-state-text">{t('game.notFound')}</div></div>
 
   const isLoggedIn = !!localStorage.getItem('user_token')
 
@@ -134,12 +135,12 @@ export default function GamePage() {
         <div className="flex-between">
           <h1 className="page-title">{game.title}</h1>
           <span className={'badge badge-' + game.state}>
-            {STATE_LABELS[game.state] || game.state}
+            {t('game.state.' + game.state) || game.state}
           </span>
         </div>
         <p className="page-subtitle">
-          Arena: {game.arena_name} &middot; {game.entry_count || 0}/{game.max_entries} fighters
-          &middot; {Math.floor((game.max_ticks || 1500) / 5 / 60)} min battle
+          {t('game.arena')}: {game.arena_name} &middot; {t('game.fightersCount', { count: game.entry_count || 0, max: game.max_entries })}
+          &middot; {t('game.minBattle', { min: Math.floor((game.max_ticks || 1500) / 5 / 60) })}
         </p>
       </div>
 
@@ -147,7 +148,7 @@ export default function GamePage() {
       {game.state === 'created' && (
         <div className="card text-center" style={{ padding: '48px' }}>
           <div style={{ fontSize: '3rem', marginBottom: '16px' }}>{'\u23F3'}</div>
-          <h2>Game Scheduled</h2>
+          <h2>{t('game.scheduled')}</h2>
           <div className="mt-md">
             <CountdownTimer target={game.lobby_start} serverOffset={serverOffset} />
           </div>
@@ -227,7 +228,7 @@ export default function GamePage() {
                 className="btn btn-primary btn-lg replay-toggle-btn"
                 onClick={() => setShowReplay(v => !v)}
               >
-                {showReplay ? 'Hide Replay' : 'Watch Replay'}
+                {showReplay ? t('game.hideReplay') : t('game.watchReplay')}
               </button>
             </div>
           )}
@@ -249,8 +250,8 @@ export default function GamePage() {
       {game.state === 'cancelled' && (
         <div className="card text-center" style={{ padding: '48px' }}>
           <div style={{ fontSize: '3rem', marginBottom: '16px' }}>{'\u274C'}</div>
-          <h2>Game Cancelled</h2>
-          <p className="text-muted mt-sm">Not enough fighters joined. Entry fees and sponsorships have been refunded.</p>
+          <h2>{t('game.cancelled')}</h2>
+          <p className="text-muted mt-sm">{t('game.cancelledDesc')}</p>
         </div>
       )}
     </div>

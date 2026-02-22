@@ -3,18 +3,16 @@ import { useNavigate } from 'react-router-dom'
 import { userApi } from '../api'
 import { useToast } from '../components/Toast'
 import Loading from '../components/Loading'
+import { useLang } from '../i18n'
 
-const TABS = [
-  { key: 'profile', label: 'Profile' },
-  { key: 'bets', label: 'Bet History' },
-  { key: 'sponsors', label: 'Sponsor History' }
-]
+const TABS = ['profile', 'bets', 'sponsors']
 
 const PRESETS = [10, 50, 100]
 const CURRENCY_ICON = { gem: '\uD83D\uDC8E', star: '\u2B50' }
 const PTS = '\uD83C\uDF56'
 
 export default function ProfilePage() {
+  const { t } = useLang()
   const navigate = useNavigate()
   const toast = useToast()
   const [tab, setTab] = useState('profile')
@@ -90,7 +88,7 @@ export default function ProfilePage() {
   async function handleSave() {
     const trimmed = editName.trim()
     if (trimmed.length < 2 || trimmed.length > 20) {
-      setError('2-20 characters required')
+      setError(t('profile.charRequired'))
       return
     }
     setSaving(true)
@@ -108,7 +106,7 @@ export default function ProfilePage() {
       }
       setEditing(false)
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to update')
+      setError(err.response?.data?.message || t('profile.failedUpdate'))
     } finally {
       setSaving(false)
     }
@@ -161,7 +159,7 @@ export default function ProfilePage() {
     try {
       const icon = CURRENCY_ICON[chargeCurrency] || chargeCurrency
       const res = await userApi.post('/wallet/convert', { amount, currency_code: chargeCurrency })
-      toast.success(`${icon} ${amount} → ${PTS} ${amount} charged!`)
+      toast.success(t('profile.chargeSuccess', { icon, amount, pts: PTS }))
       setProfile(prev => ({ ...prev, points: res.data.new_points ?? prev.points + amount }))
       setWallet(prev => {
         if (!prev) return prev
@@ -174,7 +172,7 @@ export default function ProfilePage() {
       })
       cancelCharge()
     } catch (err) {
-      const msg = err.response?.data?.message || 'Failed to charge points'
+      const msg = err.response?.data?.message || t('profile.chargeFailed')
       toast.error(msg)
       if (msg.includes('Hub') && (msg.includes('token') || msg.includes('login'))) {
         setTimeout(() => navigate('/login'), 1500)
@@ -189,20 +187,26 @@ export default function ProfilePage() {
 
   const { stats } = profile
 
+  const tabLabelMap = {
+    profile: t('profile.tabProfile'),
+    bets: t('profile.tabBets'),
+    sponsors: t('profile.tabSponsors')
+  }
+
   return (
     <div>
       <div className="page-header">
-        <h1 className="page-title">My Profile</h1>
+        <h1 className="page-title">{t('profile.title')}</h1>
       </div>
 
       <div className="tabs">
-        {TABS.map(t => (
+        {TABS.map(key => (
           <button
-            key={t.key}
-            className={'tab' + (tab === t.key ? ' active' : '')}
-            onClick={() => setTab(t.key)}
+            key={key}
+            className={'tab' + (tab === key ? ' active' : '')}
+            onClick={() => setTab(key)}
           >
-            {t.label}
+            {tabLabelMap[key]}
           </button>
         ))}
       </div>
@@ -211,7 +215,7 @@ export default function ProfilePage() {
         <div className="card" style={{ padding: '24px' }}>
           <div style={{ marginBottom: '24px' }}>
             <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              Nickname
+              {t('profile.nickname')}
             </label>
             {editing ? (
               <div style={{ display: 'flex', gap: '8px', marginTop: '8px', alignItems: 'center' }}>
@@ -227,20 +231,20 @@ export default function ProfilePage() {
                   onKeyDown={e => { if (e.key === 'Enter') handleSave(); if (e.key === 'Escape') setEditing(false) }}
                 />
                 <button className="btn btn-primary" onClick={handleSave} disabled={saving} style={{ padding: '8px 16px' }}>
-                  {saving ? '...' : 'Save'}
+                  {saving ? '...' : t('common.save')}
                 </button>
                 <button className="btn" onClick={() => { setEditing(false); setEditName(profile.display_name || ''); setError('') }} style={{ padding: '8px 16px' }}>
-                  Cancel
+                  {t('common.cancel')}
                 </button>
               </div>
             ) : (
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginTop: '4px' }}>
-                <span style={{ fontSize: '1.25rem', fontWeight: 600 }}>{profile.display_name || 'No name'}</span>
+                <span style={{ fontSize: '1.25rem', fontWeight: 600 }}>{profile.display_name || t('profile.noName')}</span>
                 <button
                   onClick={() => setEditing(true)}
                   style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: '0.875rem' }}
                 >
-                  Edit
+                  {t('profile.edit')}
                 </button>
               </div>
             )}
@@ -248,18 +252,18 @@ export default function ProfilePage() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '16px', marginBottom: '24px' }}>
-            <StatCard label={'\uD83C\uDF56 Points'} value={profile.points} accent />
-            <StatCard label="Bets" value={stats.bets_count} />
-            <StatCard label="Bets Won" value={stats.bets_won} />
-            <StatCard label="Wagered" value={stats.total_wagered} />
-            <StatCard label="Payout" value={stats.total_payout} />
-            <StatCard label="Sponsors" value={stats.sponsors_count} />
+            <StatCard label={PTS + ' ' + t('profile.points')} value={profile.points} accent />
+            <StatCard label={t('profile.bets')} value={stats.bets_count} />
+            <StatCard label={t('profile.betsWon')} value={stats.bets_won} />
+            <StatCard label={t('profile.wagered')} value={stats.total_wagered} />
+            <StatCard label={t('profile.payout')} value={stats.total_payout} />
+            <StatCard label={t('profile.sponsors')} value={stats.sponsors_count} />
           </div>
 
           {profile.hub_connected && wallet?.expired ? (
             <div style={{ marginBottom: '24px' }}>
               <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Hub Wallet
+                {t('profile.hubWallet')}
               </label>
               <div style={{
                 marginTop: '8px', padding: '16px', background: 'var(--bg)',
@@ -267,17 +271,17 @@ export default function ProfilePage() {
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px'
               }}>
                 <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-                  Hub session expired. Please log in again.
+                  {t('profile.hubExpired')}
                 </span>
                 <button className="btn btn-primary" onClick={() => navigate('/login')} style={{ padding: '6px 16px', fontSize: '0.875rem' }}>
-                  Re-login
+                  {t('profile.reLogin')}
                 </button>
               </div>
             </div>
           ) : profile.hub_connected && wallet && !wallet.expired ? (
             <div style={{ marginBottom: '24px' }}>
               <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                Hub Wallet
+                {t('profile.hubWallet')}
               </label>
               <div style={{ display: 'flex', gap: '12px', marginTop: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
                 {wallet.balances.map(b => {
@@ -294,7 +298,7 @@ export default function ProfilePage() {
                 })}
                 {!chargeOpen && convertibleBalances.length > 0 && (
                   <button className="btn btn-primary" onClick={openCharge} style={{ padding: '6px 16px', fontSize: '0.875rem' }}>
-                    Charge Points
+                    {t('profile.chargePoints')}
                   </button>
                 )}
               </div>
@@ -304,7 +308,7 @@ export default function ProfilePage() {
                   marginTop: '16px', padding: '20px', background: 'var(--bg)',
                   border: '1px solid var(--border)', borderRadius: 'var(--radius)'
                 }}>
-                  <div style={{ fontWeight: 600, marginBottom: '12px', fontSize: '1rem' }}>Charge Points</div>
+                  <div style={{ fontWeight: 600, marginBottom: '12px', fontSize: '1rem' }}>{t('profile.chargePoints')}</div>
 
                   {/* Currency selector */}
                   <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
@@ -338,7 +342,7 @@ export default function ProfilePage() {
                         <input
                           type="number"
                           className="form-input"
-                          placeholder="Custom"
+                          placeholder={t('common.custom')}
                           min="1"
                           max={selectedMax}
                           value={chargeAmount}
@@ -348,12 +352,12 @@ export default function ProfilePage() {
                         />
                         {chargeAmount && parseInt(chargeAmount) > 0 && (
                           <button className="btn btn-primary" onClick={handleCustomSubmit} style={{ padding: '8px 16px' }}>
-                            Next
+                            {t('common.next')}
                           </button>
                         )}
                       </div>
                       <button className="btn btn-ghost" onClick={cancelCharge} style={{ padding: '6px 16px', fontSize: '0.875rem' }}>
-                        Cancel
+                        {t('common.cancel')}
                       </button>
                     </>
                   ) : (
@@ -366,10 +370,10 @@ export default function ProfilePage() {
                       </div>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button className="btn btn-primary" onClick={confirmCharge} disabled={charging} style={{ padding: '8px 20px' }}>
-                          {charging ? 'Charging...' : 'Confirm'}
+                          {charging ? t('profile.charging') : t('common.confirm')}
                         </button>
                         <button className="btn btn-ghost" onClick={cancelCharge} disabled={charging} style={{ padding: '8px 20px' }}>
-                          Cancel
+                          {t('common.cancel')}
                         </button>
                       </div>
                     </>
@@ -379,15 +383,15 @@ export default function ProfilePage() {
             </div>
           ) : !profile.hub_connected && (
             <div style={{ marginBottom: '24px', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-              Connect via Hub to charge points
+              {t('profile.connectHub')}
             </div>
           )}
 
           <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-            <div>Email: {profile.email || '-'}</div>
-            <div>Role: {profile.role}</div>
-            <div>Hub: {profile.hub_connected ? 'Connected' : 'Not connected'}</div>
-            <div>Joined: {new Date(profile.created_at).toLocaleDateString()}</div>
+            <div>{t('profile.emailLabel')}: {profile.email || '-'}</div>
+            <div>{t('profile.roleLabel')}: {profile.role}</div>
+            <div>{t('profile.hubLabel')}: {profile.hub_connected ? t('profile.connected') : t('profile.notConnected')}</div>
+            <div>{t('profile.joinedLabel')}: {new Date(profile.created_at).toLocaleDateString()}</div>
           </div>
         </div>
       )}
@@ -396,7 +400,7 @@ export default function ProfilePage() {
         historyLoading ? <Loading /> : bets.data.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">{'\uD83C\uDFB2'}</div>
-            <div className="empty-state-text">No bets yet</div>
+            <div className="empty-state-text">{t('profile.noBets')}</div>
           </div>
         ) : (
           <>
@@ -404,12 +408,12 @@ export default function ProfilePage() {
               <table className="leaderboard-table">
                 <thead>
                   <tr>
-                    <th>Game</th>
-                    <th>Slot</th>
-                    <th>Amount</th>
-                    <th>Payout</th>
-                    <th>Result</th>
-                    <th>Date</th>
+                    <th>{t('profile.thGame')}</th>
+                    <th>{t('profile.thSlot')}</th>
+                    <th>{t('profile.thAmount')}</th>
+                    <th>{t('profile.thPayout')}</th>
+                    <th>{t('profile.thResult')}</th>
+                    <th>{t('profile.thDate')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -419,14 +423,14 @@ export default function ProfilePage() {
                       <td>#{b.slot}</td>
                       <td>{PTS} {parseInt(b.amount)}</td>
                       <td className={parseInt(b.payout) > 0 ? 'text-accent' : ''}>{PTS} {parseInt(b.payout)}</td>
-                      <td className={b.result === 'won' ? 'text-accent' : ''}>{b.result === 'won' ? 'Won' : b.result === 'lost' ? 'Lost' : 'Pending'}</td>
+                      <td className={b.result === 'won' ? 'text-accent' : ''}>{b.result === 'won' ? t('profile.won') : b.result === 'lost' ? t('profile.lost') : t('profile.pending')}</td>
                       <td>{new Date(b.created_at).toLocaleDateString()}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            {bets.pagination && <Pagination pagination={bets.pagination} onPage={loadBets} />}
+            {bets.pagination && <Pagination pagination={bets.pagination} onPage={loadBets} t={t} />}
           </>
         )
       )}
@@ -435,7 +439,7 @@ export default function ProfilePage() {
         historyLoading ? <Loading /> : sponsors.data.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">{'\u2B50'}</div>
-            <div className="empty-state-text">No sponsorships yet</div>
+            <div className="empty-state-text">{t('profile.noSponsors')}</div>
           </div>
         ) : (
           <>
@@ -443,14 +447,14 @@ export default function ProfilePage() {
               <table className="leaderboard-table">
                 <thead>
                   <tr>
-                    <th>Game</th>
-                    <th>Slot</th>
-                    <th>Boost</th>
-                    <th>Effect</th>
-                    <th>Cost</th>
-                    <th>Payout</th>
-                    <th>Result</th>
-                    <th>Date</th>
+                    <th>{t('profile.thGame')}</th>
+                    <th>{t('profile.thSlot')}</th>
+                    <th>{t('profile.thBoost')}</th>
+                    <th>{t('profile.thEffect')}</th>
+                    <th>{t('profile.thCost')}</th>
+                    <th>{t('profile.thPayout')}</th>
+                    <th>{t('profile.thResult')}</th>
+                    <th>{t('profile.thDate')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -458,18 +462,18 @@ export default function ProfilePage() {
                     <tr key={s.id}>
                       <td>{s.game_title}</td>
                       <td>#{s.slot}</td>
-                      <td>{s.boost_type === 'weapon_boost' ? 'Weapon' : 'HP'}</td>
+                      <td>{s.boost_type === 'weapon_boost' ? t('profile.weapon') : t('profile.hp')}</td>
                       <td>+{s.effect_value}</td>
                       <td>{PTS} {parseInt(s.cost)}</td>
                       <td className={parseInt(s.payout) > 0 ? 'text-accent' : ''}>{PTS} {parseInt(s.payout)}</td>
-                      <td className={s.result === 'won' ? 'text-accent' : ''}>{s.result === 'won' ? 'Won' : s.result === 'lost' ? 'Lost' : 'Pending'}</td>
+                      <td className={s.result === 'won' ? 'text-accent' : ''}>{s.result === 'won' ? t('profile.won') : s.result === 'lost' ? t('profile.lost') : t('profile.pending')}</td>
                       <td>{new Date(s.created_at).toLocaleDateString()}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-            {sponsors.pagination && <Pagination pagination={sponsors.pagination} onPage={loadSponsors} />}
+            {sponsors.pagination && <Pagination pagination={sponsors.pagination} onPage={loadSponsors} t={t} />}
           </>
         )
       )}
@@ -493,7 +497,7 @@ function StatCard({ label, value, accent }) {
   )
 }
 
-function Pagination({ pagination, onPage }) {
+function Pagination({ pagination, onPage, t }) {
   const { page, totalPages } = pagination
   if (totalPages <= 1) return null
   return (
@@ -504,7 +508,7 @@ function Pagination({ pagination, onPage }) {
         onClick={() => onPage(page - 1)}
         style={{ padding: '6px 12px' }}
       >
-        Prev
+        {t('common.prev')}
       </button>
       <span style={{ padding: '6px 12px', color: 'var(--text-muted)' }}>
         {page} / {totalPages}
@@ -515,7 +519,7 @@ function Pagination({ pagination, onPage }) {
         onClick={() => onPage(page + 1)}
         style={{ padding: '6px 12px' }}
       >
-        Next
+        {t('common.next')}
       </button>
     </div>
   )

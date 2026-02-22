@@ -1,4 +1,5 @@
 import React from 'react'
+import { useLang } from '../i18n'
 
 const SPEEDS = [1, 2, 4]
 
@@ -6,6 +7,7 @@ export default function ReplayControls({
   isPlaying, speed, currentCheckpoint, totalCheckpoints,
   onPlayPause, onSpeed, onSeek
 }) {
+  const { t } = useLang()
   const progress = totalCheckpoints > 0 ? (currentCheckpoint / totalCheckpoints) * 100 : 0
 
   function handleProgressClick(e) {
@@ -16,7 +18,7 @@ export default function ReplayControls({
 
   return (
     <div className="replay-controls">
-      <button className="replay-btn" onClick={onPlayPause} aria-label={isPlaying ? 'Pause' : 'Play'}>
+      <button className="replay-btn" onClick={onPlayPause} aria-label={isPlaying ? t('replay.pause') : t('replay.play')}>
         {isPlaying ? '\u23F8' : '\u25B6'}
       </button>
 

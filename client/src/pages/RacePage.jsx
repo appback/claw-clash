@@ -9,16 +9,10 @@ import ReplayControls from '../race/ReplayControls'
 import ResultBoard from '../race/ResultBoard'
 import PredictionPanel from '../race/PredictionPanel'
 import useReplay from '../race/useReplay'
-
-const STATE_LABELS = {
-  scheduled: 'Scheduled',
-  registration: 'Registration Open',
-  racing: 'Race in Progress',
-  scoring: 'Scoring...',
-  finished: 'Race Finished'
-}
+import { useLang } from '../i18n'
 
 export default function RacePage() {
+  const { t } = useLang()
   const { id } = useParams()
   const toast = useToast()
   const [race, setRace] = useState(null)
@@ -37,7 +31,7 @@ export default function RacePage() {
             .catch(() => {})
         }
       })
-      .catch(() => toast.error('Failed to load race'))
+      .catch(() => toast.error(t('race.failedLoad')))
       .finally(() => setLoading(false))
   }, [id])
 
@@ -53,7 +47,7 @@ export default function RacePage() {
   const replayState = useReplay(replay)
 
   if (loading) return <Loading />
-  if (!race) return <div className="empty-state"><div className="empty-state-text">Race not found</div></div>
+  if (!race) return <div className="empty-state"><div className="empty-state-text">{t('race.notFound')}</div></div>
 
   return (
     <div>
@@ -61,11 +55,11 @@ export default function RacePage() {
         <div className="flex-between">
           <h1 className="page-title">{race.title}</h1>
           <span className={'badge badge-' + race.state}>
-            {STATE_LABELS[race.state] || race.state}
+            {t('race.state.' + race.state) || race.state}
           </span>
         </div>
         <p className="page-subtitle">
-          Track: {race.track_type} &middot; {race.challenge_count || 10} challenges &middot; {race.entry_count || 0}/{race.max_entries} racers
+          {t('race.track', { type: race.track_type })} &middot; {t('race.challenges', { count: race.challenge_count || 10 })} &middot; {t('race.racers', { count: race.entry_count || 0, max: race.max_entries })}
         </p>
       </div>
 
@@ -74,7 +68,7 @@ export default function RacePage() {
         <div className="race-layout">
           <div>
             <div className="card">
-              <h2 className="card-title">Race starts in</h2>
+              <h2 className="card-title">{t('race.startsIn')}</h2>
               <div className="mt-md">
                 <CountdownTimer target={race.race_start} />
               </div>
@@ -82,7 +76,7 @@ export default function RacePage() {
 
             {race.entries && race.entries.length > 0 && (
               <div className="card mt-lg">
-                <h2 className="card-title">Registered Racers ({race.entries.length})</h2>
+                <h2 className="card-title">{t('race.registeredRacers', { count: race.entries.length })}</h2>
                 <div className="mt-md">
                   {race.entries.map(e => (
                     <div key={e.agent_id} className="result-row">
@@ -109,10 +103,10 @@ export default function RacePage() {
       {race.state === 'racing' && (
         <div className="card text-center" style={{ padding: '48px' }}>
           <div style={{ fontSize: '3rem', marginBottom: '16px' }}>{'\uD83C\uDFCE\uFE0F'}</div>
-          <h2>Race in Progress!</h2>
+          <h2>{t('race.inProgress')}</h2>
           <p className="text-muted mt-sm">
-            {race.entry_count || 0} crabs are competing right now.
-            Results will appear shortly.
+            {t('race.competingNow', { count: race.entry_count || 0 })}
+            {' '}{t('race.resultsShortly')}
           </p>
         </div>
       )}
@@ -121,8 +115,8 @@ export default function RacePage() {
       {race.state === 'scoring' && (
         <div className="card text-center" style={{ padding: '48px' }}>
           <div style={{ fontSize: '3rem', marginBottom: '16px' }}>{'\u2699\uFE0F'}</div>
-          <h2>Scoring in Progress</h2>
-          <p className="text-muted mt-sm">Calculating final rankings...</p>
+          <h2>{t('race.scoringInProgress')}</h2>
+          <p className="text-muted mt-sm">{t('race.calculatingRankings')}</p>
         </div>
       )}
 
@@ -131,7 +125,7 @@ export default function RacePage() {
         <div>
           {replay && (
             <div className="section">
-              <h2 className="section-title">Race Replay</h2>
+              <h2 className="section-title">{t('race.replay')}</h2>
               <RaceTrack
                 lanes={replay.lanes}
                 positions={replayState.positions}
@@ -157,18 +151,18 @@ export default function RacePage() {
             <div>
               {myPrediction && (
                 <div className="card">
-                  <h3 className="card-title">Your Prediction</h3>
+                  <h3 className="card-title">{t('race.yourPrediction')}</h3>
                   <div className="mt-md">
                     <p>
-                      You picked: <strong>{myPrediction.agent_name}</strong>
+                      {t('race.youPicked')} <strong>{myPrediction.agent_name}</strong>
                     </p>
                     {myPrediction.result && (
                       <p className="mt-sm">
-                        Result: <span className={myPrediction.result === 'win' ? 'text-accent' : 'text-muted'}>
-                          {myPrediction.result === 'win' ? 'Correct!' : 'Wrong'}
+                        {t('race.result')} <span className={myPrediction.result === 'win' ? 'text-accent' : 'text-muted'}>
+                          {myPrediction.result === 'win' ? t('race.correct') : t('race.wrong')}
                         </span>
                         {myPrediction.payout > 0 && (
-                          <span> &middot; Won {'\uD83C\uDF56'} {myPrediction.payout}</span>
+                          <span> &middot; {t('common.won')} {'\uD83C\uDF56'} {myPrediction.payout}</span>
                         )}
                       </p>
                     )}

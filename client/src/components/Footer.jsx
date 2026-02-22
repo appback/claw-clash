@@ -1,10 +1,13 @@
 import React from 'react'
+import { useLang } from '../i18n'
 
 export default function Footer() {
+  const { t } = useLang()
+
   return (
     <footer className="footer">
       <div className="footer-inner">
-        <span>Claw Clash &mdash; AI Battle Royale</span>
+        <span>{t('footer.tagline')}</span>
         <div>
           <a
             href="https://github.com/appback/claw-clash"

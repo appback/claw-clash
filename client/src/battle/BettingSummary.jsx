@@ -2,8 +2,10 @@ import React, { useState, useEffect, useRef } from 'react'
 import { publicApi, userApi } from '../api'
 import { SLOT_COLORS } from './AgentToken'
 import { addCredits } from '../utils/guestCredits'
+import { useLang } from '../i18n'
 
 export default function BettingSummary({ gameId }) {
+  const { t } = useLang()
   const [data, setData] = useState(null)
   const isLoggedIn = !!localStorage.getItem('user_token')
   const creditSettledRef = useRef(false)
@@ -19,8 +21,8 @@ export default function BettingSummary({ gameId }) {
   if (!data || !data.bets) {
     return (
       <div className="card betting-summary">
-        <h3 className="card-title">Betting</h3>
-        <p className="text-muted text-center">No bets placed</p>
+        <h3 className="card-title">{t('betting.title')}</h3>
+        <p className="text-muted text-center">{t('betting.noBets')}</p>
       </div>
     )
   }
@@ -56,16 +58,16 @@ export default function BettingSummary({ gameId }) {
 
   return (
     <div className="card betting-summary">
-      <h3 className="card-title">Betting Results</h3>
+      <h3 className="card-title">{t('betting.title')}</h3>
 
       <div className="betting-summary-slots">
         {data.bets.filter(b => b.count > 0).map(b => {
           const color = SLOT_COLORS[b.slot % SLOT_COLORS.length]
           return (
             <div key={b.slot} className="betting-summary-slot">
-              <span className="betting-summary-slot-label" style={{ color }}>Slot {b.slot}</span>
+              <span className="betting-summary-slot-label" style={{ color }}>{t('common.slot')} {b.slot}</span>
               <span className="betting-summary-slot-count">
-                {b.count} bet{b.count !== 1 ? 's' : ''}
+                {b.count} {b.count !== 1 ? t('betting.bets') : t('betting.bet')}
                 {b.total_amount > 0 && ` / \uD83C\uDF56 ${b.total_amount}`}
               </span>
             </div>
@@ -74,24 +76,24 @@ export default function BettingSummary({ gameId }) {
       </div>
 
       <div className="betting-summary-total">
-        Total: {totalBets} bet{totalBets !== 1 ? 's' : ''}
+        {t('betting.total', { count: totalBets })} {totalBets !== 1 ? t('betting.bets') : t('betting.bet')}
       </div>
 
       {Object.keys(myBetsBySlot).length > 0 && !isGuest && (
         <div className="betting-summary-my">
-          <h4>Your Bets</h4>
+          <h4>{t('betting.yourBets')}</h4>
           {Object.entries(myBetsBySlot).map(([slot, info]) => (
             <div key={slot} className="betting-summary-my-row">
-              <span style={{ color: SLOT_COLORS[slot % SLOT_COLORS.length] }}>Slot {slot}</span>
+              <span style={{ color: SLOT_COLORS[slot % SLOT_COLORS.length] }}>{t('common.slot')} {slot}</span>
               <span>{info.count > 1 ? `${info.count}x / ` : ''}{'\uD83C\uDF56'} {info.totalAmount}</span>
               <span className={info.totalPayout > 0 ? 'text-win' : 'text-lose'}>
-                {info.settled ? (info.totalPayout > 0 ? `+${info.totalPayout}` : 'Lost') : 'Pending'}
+                {info.settled ? (info.totalPayout > 0 ? `+${info.totalPayout}` : t('common.lost')) : t('common.pending')}
               </span>
             </div>
           ))}
           {hasSettled && (
             <div className={'betting-summary-net' + (myNet >= 0 ? ' text-win' : ' text-lose')}>
-              Net: {myNet >= 0 ? '+' : ''}{'\uD83C\uDF56'} {myNet}
+              {t('betting.net')} {myNet >= 0 ? '+' : ''}{'\uD83C\uDF56'} {myNet}
             </div>
           )}
         </div>
@@ -99,24 +101,24 @@ export default function BettingSummary({ gameId }) {
 
       {Object.keys(myBetsBySlot).length > 0 && isGuest && (
         <div className="betting-summary-my">
-          <h4>Your Picks</h4>
+          <h4>{t('betting.yourPicks')}</h4>
           {Object.entries(myBetsBySlot).map(([slot, info]) => (
             <div key={slot} className="betting-summary-my-row">
-              <span style={{ color: SLOT_COLORS[slot % SLOT_COLORS.length] }}>Slot {slot}</span>
-              <span className="text-muted">{info.count} bet{info.count !== 1 ? 's' : ''}</span>
+              <span style={{ color: SLOT_COLORS[slot % SLOT_COLORS.length] }}>{t('common.slot')} {slot}</span>
+              <span className="text-muted">{info.count} {info.count !== 1 ? t('betting.bets') : t('betting.bet')}</span>
               <span className={info.totalPayout > 0 ? 'text-win' : 'text-lose'}>
-                {info.settled ? (info.totalPayout > 0 ? `+${info.totalPayout} credits` : 'Lost') : 'Pending'}
+                {info.settled ? (info.totalPayout > 0 ? `+${info.totalPayout} ${t('common.credits')}` : t('common.lost')) : t('common.pending')}
               </span>
             </div>
           ))}
           {hasSettled && myTotalPayout > 0 && (
             <div className="betting-summary-guest-result text-win">
-              Won: +{myTotalPayout} credits
+              {t('betting.wonCredits', { amount: myTotalPayout })}
             </div>
           )}
           {hasSettled && myTotalPayout === 0 && (
             <div className="betting-summary-guest-cta">
-              Better luck next time! Sign up for real rewards.
+              {t('betting.betterLuck')}
             </div>
           )}
         </div>

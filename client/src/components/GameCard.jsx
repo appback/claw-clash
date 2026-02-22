@@ -1,5 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
+import { useLang } from '../i18n'
 
 const STATE_BADGES = {
   created: 'badge-scheduled',
@@ -40,30 +41,32 @@ function formatTime(iso) {
   })
 }
 
-function getTimeLabel(game) {
+function getTimeLabel(game, t) {
   switch (game.state) {
-    case 'created': return 'Lobby opens ' + formatTime(game.lobby_start)
-    case 'lobby': return 'Betting starts ' + formatTime(game.betting_start)
-    case 'betting': return 'Battle starts ' + formatTime(game.battle_start)
-    case 'battle': return 'Battle in progress'
-    case 'ended': return 'Ended ' + formatTime(game.battle_end)
-    case 'cancelled': return 'Cancelled'
+    case 'created': return t('game.time.lobbyOpens', { time: formatTime(game.lobby_start) })
+    case 'lobby': return t('game.time.bettingStarts', { time: formatTime(game.betting_start) })
+    case 'betting': return t('game.time.battleStarts', { time: formatTime(game.battle_start) })
+    case 'battle': return t('game.time.battleInProgress')
+    case 'ended': return t('game.time.ended', { time: formatTime(game.battle_end) })
+    case 'cancelled': return t('game.time.cancelled')
     default: return formatTime(game.created_at)
   }
 }
 
 export default function GameCard({ game }) {
+  const { t } = useLang()
+
   return (
     <Link to={'/game/' + game.id} className="race-card">
       <div className="race-card-header">
         <span className="race-card-title">{game.title}</span>
         <span className={'badge ' + (STATE_BADGES[game.state] || 'badge-scheduled')}>
-          {STATE_LABELS[game.state] || game.state}
+          {t('game.state.' + game.state) || game.state}
         </span>
       </div>
       <div className="race-card-meta">
         <span className="race-card-meta-item">
-          {'\u2694\uFE0F'} {game.arena_name || 'Arena'}
+          {'\u2694\uFE0F'} {game.arena_name || t('game.arena')}
         </span>
         <span className="race-card-meta-item">
           {'\uD83E\uDD80'} {game.entry_count ?? 0}/{game.max_entries ?? 8}
@@ -78,7 +81,7 @@ export default function GameCard({ game }) {
         </span>
       </div>
       <div className="race-card-time">
-        {getTimeLabel(game)}
+        {getTimeLabel(game, t)}
       </div>
     </Link>
   )

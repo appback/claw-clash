@@ -5,10 +5,12 @@ import CountdownTimer from '../components/CountdownTimer'
 import { publicApi, userApi } from '../api'
 import socket from '../socket'
 import { getCredits, useCredit } from '../utils/guestCredits'
+import { useLang } from '../i18n'
 
 const BET_AMOUNTS = [1, 10, 100]
 
 export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBetPlaced, onBetsLoaded, serverOffset }) {
+  const { t } = useLang()
   const entries = game.entries || []
   const maxSlots = game.max_entries || 8
   const [speakingSlots, setSpeakingSlots] = useState({})
@@ -157,7 +159,7 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
       }
       loadBetCounts()
     } catch (err) {
-      const msg = err.response?.data?.message || 'Bet failed'
+      const msg = err.response?.data?.message || t('lobby.betFailed')
       alert(msg)
     } finally {
       setBetLoading(null)
@@ -175,14 +177,14 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
     <div className="lobby-view">
       <div className="lobby-header">
         <div>
-          <h2 className="section-title">{isBetting ? 'Betting' : 'Lobby'}</h2>
+          <h2 className="section-title">{isBetting ? t('lobby.betting') : t('lobby.title')}</h2>
           <p className="text-muted">
-            {entries.length}/{maxSlots} fighters joined &middot; Arena: {game.arena_name || 'The Pit'}
+            {t('lobby.fightersJoined', { count: entries.length, max: maxSlots })} &middot; {t('lobby.arena', { name: game.arena_name || 'The Pit' })}
             {isBetting && userPoints != null && (
               <span> &middot; <span className="betting-points-inline">{'\uD83C\uDF56'} {userPoints}</span></span>
             )}
             {isBetting && !isLoggedIn && (
-              <span> &middot; <span className="betting-points-inline">{'\uD83D\uDCB0'} {guestCredits} credits</span></span>
+              <span> &middot; <span className="betting-points-inline">{'\uD83D\uDCB0'} {guestCredits} {t('common.credits')}</span></span>
             )}
           </p>
         </div>
@@ -200,8 +202,8 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
           if (!entry) {
             return (
               <div key={i} className="lobby-slot lobby-slot-empty">
-                <div className="lobby-slot-number">Slot {i}</div>
-                <div className="lobby-slot-waiting">Waiting for fighter...</div>
+                <div className="lobby-slot-number">{t('common.slot')} {i}</div>
+                <div className="lobby-slot-waiting">{t('lobby.waitingForFighter')}</div>
               </div>
             )
           }
@@ -229,7 +231,7 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
           return (
             <div key={i} className="lobby-slot" style={{ '--slot-color': color }}>
               <div className="lobby-slot-header">
-                <span className="lobby-slot-number" style={{ color }}>Slot {i}</span>
+                <span className="lobby-slot-number" style={{ color }}>{t('common.slot')} {i}</span>
                 {isBetting && (
                   <span className="lobby-slot-counts">
                     <span className={hasSponsorPulse ? 'lobby-count-pulse' : ''} style={{ fontSize: Math.min(13 + sponsorCount * 0.1, 16) }}>S:{sponsorCount}</span>
@@ -240,14 +242,14 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
               </div>
 
               <div className="lobby-slot-visual">
-                <span className="lobby-weapon-icon">{weaponIcon}</span>
-                <div style={{ position: 'relative' }}>
+                <span className="lobby-weapon-icon" data-tooltip={t('lobby.tipWeapon', { name: entry.weapon_name || '?', dmg: entry.weapon_damage || baseDmg })}>{weaponIcon}</span>
+                <div style={{ position: 'relative' }} data-tooltip={t('lobby.tipFace')}>
                   <AgentFace className="lobby-face" reaction={reaction} />
                   {speakingSlots[i] && (
                     <div className="lobby-speech-bubble">{speakingSlots[i]}</div>
                   )}
                 </div>
-                <span className="lobby-armor-icon">{armorIcon || '\u2796'}</span>
+                <span className="lobby-armor-icon" data-tooltip={armorIcon ? t('lobby.tipArmor', { name: entry.armor_name || '?', def: defPct, evd: evdPct }) : t('lobby.tipNoArmor')}>{armorIcon || '\u2796'}</span>
               </div>
 
               <div className="lobby-slot-stats">
@@ -286,11 +288,11 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
                     BET_AMOUNTS.map(amt => (
                       <button
                         key={amt}
-                        className="bet-amount-btn"
+                        className="bet-amount-btn bet-amount-btn-free"
                         disabled={betLoading !== null || (userPoints != null && userPoints < amt)}
                         onClick={() => handleBet(i, amt)}
                       >
-                        {betLoading === i ? '..' : amt}
+                        {betLoading === i ? '..' : <>{'\uD83C\uDF56'}{amt}</>}
                       </button>
                     ))
                   ) : (
@@ -299,7 +301,7 @@ export default function LobbyView({ game, onSponsor, isBetting, userPoints, onBe
                       disabled={betLoading !== null || guestCredits <= 0 || guestOtherSlot}
                       onClick={() => handleBet(i, 0)}
                     >
-                      {betLoading === i ? '..' : `Bet (\uD83D\uDCB0${guestCredits})`}
+                      {betLoading === i ? '..' : `${t('lobby.guestBet')} (\uD83D\uDCB0${guestCredits})`}
                     </button>
                   )}
                 </div>
