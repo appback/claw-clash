@@ -211,7 +211,11 @@ async function getHubWallet(req, res, next) {
       return res.json({ hub_connected: true, balances: [], error: 'Hub unavailable' })
     }
 
-    res.json({ hub_connected: true, balances: hubResult.body.balances || [] })
+    const balances = (hubResult.body.balances || []).map(b => ({
+      currency_code: b.currency_code || b.code,
+      balance: b.balance
+    }))
+    res.json({ hub_connected: true, balances })
   } catch (err) {
     next(err)
   }

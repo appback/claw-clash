@@ -111,7 +111,7 @@ export default function ProfilePage() {
     }
   }
 
-  const gemBalance = wallet?.balances?.find(b => b.currency_code === 'gem')?.balance || 0
+  const gemBalance = wallet?.balances?.find(b => (b.currency_code || b.code) === 'gem')?.balance || 0
 
   function selectPreset(val) {
     setChargeAmount(String(val))
@@ -143,7 +143,7 @@ export default function ProfilePage() {
         return {
           ...prev,
           balances: prev.balances.map(b =>
-            b.currency_code === 'gem' ? { ...b, balance: res.data.new_gem_balance ?? b.balance - amount } : b
+            (b.currency_code || b.code) === 'gem' ? { ...b, balance: res.data.new_gem_balance ?? b.balance - amount } : b
           )
         }
       })
@@ -255,14 +255,17 @@ export default function ProfilePage() {
                 Hub Wallet
               </label>
               <div style={{ display: 'flex', gap: '12px', marginTop: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
-                {wallet.balances.map(b => (
-                  <span key={b.currency_code} style={{
-                    padding: '6px 12px', background: 'var(--bg)', border: '1px solid var(--border)',
-                    borderRadius: 'var(--radius)', fontSize: '0.875rem'
-                  }}>
-                    {b.balance} {b.currency_code.toUpperCase()}
-                  </span>
-                ))}
+                {wallet.balances.map(b => {
+                  const code = b.currency_code || b.code
+                  return (
+                    <span key={code} style={{
+                      padding: '6px 12px', background: 'var(--bg)', border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius)', fontSize: '0.875rem'
+                    }}>
+                      {b.balance} {code.toUpperCase()}
+                    </span>
+                  )
+                })}
                 {!chargeOpen && (
                   <button className="btn btn-primary" onClick={() => setChargeOpen(true)} style={{ padding: '6px 16px', fontSize: '0.875rem' }}>
                     Charge Points
